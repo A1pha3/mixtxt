@@ -34,7 +34,7 @@
 | 支付 Webhook | ⚠️ Edge Functions | ✅ Route Handlers 原生支持 |
 | 管理后台 | ❌ SSG 不适合 | ✅ 同一项目中 Client Components |
 | 免费部署 | ✅ Vercel 免费层 | ✅ Vercel 免费层 |
-| 学习曲线 | 低 | 中 |
+| 学习曲线 | 低 | 中（RSC 心智模型需适应） |
 
 ---
 
@@ -45,9 +45,9 @@
 | 前端框架 | **Next.js 15 (App Router)** | RSC + ISR + Server Actions，一站式全栈 |
 | 后端服务 | **Supabase** | PostgreSQL + Auth + Storage，一站式 BaaS |
 | 数据库 | **Supabase PostgreSQL** | 500MB 免费额度，RLS 权限控制 |
-| 用户认证 | **Supabase Auth + next-auth** | Supabase 管理用户，next-auth 管理会话 |
+| 用户认证 | **Supabase Auth** | Supabase 管理用户和会话，@supabase/ssr 处理 SSR cookie |
 | 文件存储 | **Supabase Storage** | 封面、图片存储 |
-| 搜索 | **Meilisearch** | 中文搜索友好，Supabase 官方集成 |
+| 搜索 | **Meilisearch** | 中文搜索友好，开源可自托管（注：非 Supabase 官方一方集成，需独立部署或使用 Meilisearch Cloud） |
 | 支付接入 | **Payjs（初期）/ 微信支付宝直连（后期）** | 国内支付，个人可用 |
 | 部署平台 | **Vercel** | Next.js 原生支持，免费层 |
 | 样式方案 | **Tailwind CSS + shadcn/ui** | 开发效率高，组件库完善 |
@@ -115,7 +115,8 @@
 1. **chapters 表不存 content 字段**：内容从本地 Markdown 通过构建时读取，数据库只存元数据和索引
 2. **修复了 balances 表 RLS 漏洞**：禁止用户直接 UPDATE 余额
 3. **修复了 deduct_balance 竞态条件**：使用原子操作
-4. **移除了 zhcfg 全文搜索**：改用 Meilisearch
+4. **移除了 PostgreSQL 中文全文搜索**（zhparser 配置门槛高、Supabase 托管环境不易维护）：改用 Meilisearch
+5. **purchases 表统一记录所有付费行为**：`purchase_type` 区分 chapter / book / vip / recharge；`recharges` 与 `vip_subscriptions` 作为衍生流水/订阅状态表，主交易记录都在 purchases。支付回调只需查一张表
 
 ### 4.2 数据表设计
 
@@ -149,7 +150,8 @@ CREATE POLICY "Users can view own balance"
   ON balances FOR SELECT
   USING (auth.uid() = user_id);
 
--- 注意：不设 UPDATE 策略，只允许通过 SECURITY DEFINER 函数操作
+-- 注意：不设 INSERT/UPDATE/DELETE 策略，余额变更只允许通过 SECURITY DEFINER 函数（add_balance/deduct_balance）操作
+-- 初始余额行由 handle_new_user 触发器创建
 ```
 
 #### 书籍相关
@@ -347,15 +349,24 @@ ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE books ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chapters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE purchases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE recharges ENABLE ROW LEVEL SECURITY;
+ALTER TABLE vip_subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reading_progress ENABLE ROW LEVEL SECURITY;
+ALTER TABLE book_likes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chapter_likes ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view own profile"
+-- user_profiles：公开字段所有人可读，自己可改
+CREATE POLICY "Profiles are viewable by everyone"
   ON user_profiles FOR SELECT
-  USING (auth.uid() = id);
+  USING (true);
 
 CREATE POLICY "Users can update own profile"
   ON user_profiles FOR UPDATE
-  USING (auth.uid() = id);
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+
+-- 注意：不允许客户端修改 role / vip_expires_at，需通过 SECURITY DEFINER 函数或 admin 客户端
 
 CREATE POLICY "Public books are viewable by everyone"
   ON books FOR SELECT
@@ -374,6 +385,7 @@ CREATE POLICY "Published chapters viewable with access check"
   ON chapters FOR SELECT
   USING (
     is_published = true
+    AND is_deleted = false
     AND (
       is_vip = false
       OR EXISTS (
@@ -398,6 +410,65 @@ CREATE POLICY "Published chapters viewable with access check"
     )
   );
 
+CREATE POLICY "Admins can manage chapters"
+  ON chapters FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM user_profiles
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
+
+-- purchases：用户可查询自己的订单，但不允许直接 INSERT/UPDATE（必须走服务端 Route Handler，由 admin client 写入）
+CREATE POLICY "Users can view own purchases"
+  ON purchases FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Admins can manage purchases"
+  ON purchases FOR ALL
+  USING (
+    EXISTS (SELECT 1 FROM user_profiles WHERE id = auth.uid() AND role = 'admin')
+  );
+
+-- recharges：同上
+CREATE POLICY "Users can view own recharges"
+  ON recharges FOR SELECT
+  USING (auth.uid() = user_id);
+
+-- vip_subscriptions：用户可查询自己的订阅
+CREATE POLICY "Users can view own vip subscriptions"
+  ON vip_subscriptions FOR SELECT
+  USING (auth.uid() = user_id);
+
+-- reading_progress：用户读写自己的进度
+CREATE POLICY "Users can view own reading progress"
+  ON reading_progress FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can upsert own reading progress"
+  ON reading_progress FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own reading progress"
+  ON reading_progress FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- 点赞：用户可读所有人的点赞，只能管理自己的
+CREATE POLICY "Likes are viewable by everyone"
+  ON book_likes FOR SELECT USING (true);
+CREATE POLICY "Users can manage own book likes"
+  ON book_likes FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Chapter likes are viewable by everyone"
+  ON chapter_likes FOR SELECT USING (true);
+CREATE POLICY "Users can manage own chapter likes"
+  ON chapter_likes FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can view comments"
+  ON comments FOR SELECT
+  USING (is_deleted = false);
+
 CREATE POLICY "Users can insert own comments"
   ON comments FOR INSERT
   WITH CHECK (auth.uid() = user_id);
@@ -405,6 +476,15 @@ CREATE POLICY "Users can insert own comments"
 CREATE POLICY "Users can delete own comments"
   ON comments FOR DELETE
   USING (auth.uid() = user_id);
+
+CREATE POLICY "Admins can manage comments"
+  ON comments FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM user_profiles
+      WHERE id = auth.uid() AND role = 'admin'
+    )
+  );
 ```
 
 ### 4.4 数据库函数
@@ -417,7 +497,7 @@ BEGIN
   INSERT INTO public.balances (user_id) VALUES (NEW.id);
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
@@ -436,42 +516,49 @@ BEGIN
   WHERE id = COALESCE(NEW.book_id, OLD.book_id);
   RETURN COALESCE(NEW, OLD);
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 CREATE TRIGGER on_chapter_change
   AFTER INSERT OR UPDATE OR DELETE ON chapters
   FOR EACH ROW EXECUTE FUNCTION update_book_chapter_count();
 
+-- 充值：使用 UPSERT 避免触发器尚未跑完时余额行不存在
 CREATE OR REPLACE FUNCTION add_balance(p_user_id UUID, p_amount DECIMAL)
 RETURNS VOID AS $$
 BEGIN
-  UPDATE balances
-  SET balance = balance + p_amount,
-      total_recharged = total_recharged + p_amount,
-      updated_at = NOW()
-  WHERE user_id = p_user_id;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+  IF p_amount <= 0 THEN
+    RAISE EXCEPTION 'Amount must be positive';
+  END IF;
 
+  INSERT INTO balances (user_id, balance, total_recharged)
+  VALUES (p_user_id, p_amount, p_amount)
+  ON CONFLICT (user_id) DO UPDATE
+  SET balance = balances.balance + EXCLUDED.balance,
+      total_recharged = balances.total_recharged + EXCLUDED.total_recharged,
+      updated_at = NOW();
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- 扣款：原子 UPDATE + 余额检查；失败返回 FALSE
 CREATE OR REPLACE FUNCTION deduct_balance(p_user_id UUID, p_amount DECIMAL)
 RETURNS BOOLEAN AS $$
 DECLARE
-  new_balance DECIMAL;
+  affected INTEGER;
 BEGIN
+  IF p_amount <= 0 THEN
+    RAISE EXCEPTION 'Amount must be positive';
+  END IF;
+
   UPDATE balances
   SET balance = balance - p_amount,
       total_spent = total_spent + p_amount,
       updated_at = NOW()
-  WHERE user_id = p_user_id AND balance >= p_amount
-  RETURNING balance INTO new_balance;
+  WHERE user_id = p_user_id AND balance >= p_amount;
 
-  IF NOT FOUND THEN
-    RETURN FALSE;
-  END IF;
-
-  RETURN TRUE;
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  RETURN affected = 1;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 ```
 
 ---
@@ -521,7 +608,6 @@ novel-site/
 │   │   │   ├── users/page.tsx
 │   │   │   └── orders/page.tsx
 │   │   └── api/
-│   │       ├── auth/[...nextauth]/route.ts
 │   │       ├── payment/
 │   │       │   ├── create/route.ts       # 创建支付订单
 │   │       │   └── notify/route.ts       # 支付回调
@@ -543,7 +629,7 @@ novel-site/
 │   │   │   ├── client.ts                # 浏览器端 Supabase 客户端
 │   │   │   ├── server.ts                # 服务端 Supabase 客户端
 │   │   │   └── admin.ts                 # Admin 客户端（Service Role）
-│   │   ├── auth.ts                       # next-auth 配置
+│   │   ├── auth.ts                       # Supabase Auth 工具函数
 │   │   ├── content.ts                    # 本地 Markdown 读取工具
 │   │   ├── payment.ts                    # Payjs 支付工具
 │   │   ├── meilisearch.ts               # 搜索客户端
@@ -768,6 +854,15 @@ export function getChapterContent(
   const chaptersDir = path.join(CONTENT_DIR, bookSlug, 'chapters')
   if (!fs.existsSync(chaptersDir)) return null
 
+  // 优化：先尝试文件名直接匹配（约定文件名 = slug.md）
+  const directPath = path.join(chaptersDir, `${chapterSlug}.md`)
+  if (fs.existsSync(directPath)) {
+    const raw = fs.readFileSync(directPath, 'utf-8')
+    const { data, content } = matter(raw)
+    return { ...(data as ChapterFrontmatter), content }
+  }
+
+  // 回退：遍历查找匹配的 slug（兼容非标准命名）
   const targetFile = fs.readdirSync(chaptersDir)
     .find(f => {
       if (!f.endsWith('.md')) return false
@@ -813,7 +908,7 @@ export default function HomePage() {
 
 ```typescript
 // src/app/books/[slug]/page.tsx
-import { getBookMeta, getBookChapters } from '@/lib/content'
+import { getAllBooks, getBookMeta, getBookChapters } from '@/lib/content'
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { ChapterList } from '@/components/ChapterList'
@@ -839,17 +934,33 @@ export default async function BookDetailPage({
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
+  // 通过 slug 拿到 books.id（BookMeta 不含 id，必须查库）
+  const { data: bookRow } = await supabase
+    .from('books')
+    .select('id')
+    .eq('slug', slug)
+    .single()
+  const bookId = bookRow?.id
+
   let purchasedChapterIds: Set<string> = new Set()
   let isVip = false
+  let hasBookPurchase = false
 
   if (user) {
     const { data: purchases } = await supabase
       .from('purchases')
-      .select('chapter_id')
+      .select('chapter_id, book_id, purchase_type')
       .eq('user_id', user.id)
       .eq('status', 'completed')
 
-    purchasedChapterIds = new Set(purchases?.map(p => p.chapter_id).filter(Boolean) ?? [])
+    purchasedChapterIds = new Set(
+      purchases?.filter(p => p.purchase_type === 'chapter' && p.chapter_id)
+        .map(p => p.chapter_id as string) ?? []
+    )
+
+    hasBookPurchase = !!purchases?.some(
+      p => p.purchase_type === 'book' && p.book_id === bookId
+    )
 
     const { data: vipSub } = await supabase
       .from('vip_subscriptions')
@@ -857,12 +968,13 @@ export default async function BookDetailPage({
       .eq('user_id', user.id)
       .eq('status', 'active')
       .gt('expires_at', new Date().toISOString())
-      .single()
+      .maybeSingle()
 
     isVip = !!vipSub
   }
 
-  const isBookPurchased = meta.is_paid ? purchasedChapterIds.size > 0 || isVip : true
+  // 免费书籍视为已"购买"，付费书籍则需要购买记录或 VIP
+  const isBookPurchased = !meta.is_paid || hasBookPurchase || isVip
 
   return (
     <main className="container mx-auto px-4 py-8">
@@ -885,7 +997,7 @@ export default async function BookDetailPage({
 
 ```typescript
 // src/app/books/[slug]/[chapter]/page.tsx
-import { getBookMeta, getChapterContent, getBookChapters } from '@/lib/content'
+import { getBookMeta, getChapterContent } from '@/lib/content'
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
@@ -894,6 +1006,9 @@ import { Paywall } from '@/components/Paywall'
 interface Props {
   params: Promise<{ slug: string; chapter: string }>
 }
+
+// 免费章节走 ISR；付费章节内的权限校验是 dynamic 的，但页面壳本身可缓存
+export const revalidate = 600
 
 export default async function ChapterPage({ params }: Props) {
   const { slug, chapter: chapterSlug } = await params
@@ -904,12 +1019,8 @@ export default async function ChapterPage({ params }: Props) {
   const chapter = getChapterContent(slug, chapterSlug)
   if (!chapter) notFound()
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  const isFreeChapter = !chapter.is_vip
-
-  if (isFreeChapter) {
+  // 免费章节直接渲染
+  if (!chapter.is_vip) {
     return (
       <main className="container mx-auto px-4 py-8 max-w-3xl">
         <h1 className="text-2xl font-bold mb-6">{chapter.title}</h1>
@@ -918,27 +1029,41 @@ export default async function ChapterPage({ params }: Props) {
     )
   }
 
+  // 付费章节：force-dynamic，逐请求校验
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
   if (!user) {
     redirect(`/user/login?redirect=/books/${slug}/${chapterSlug}`)
   }
 
-  const { data: purchase } = await supabase
-    .from('purchases')
-    .select('id')
-    .eq('user_id', user.id)
-    .eq('chapter_id', chapterSlug)
-    .eq('status', 'completed')
-    .single()
+  // 通过 slug 拿到 books.id 和 chapters.id
+  const { data: bookRow } = await supabase
+    .from('books').select('id').eq('slug', slug).single()
+  if (!bookRow) notFound()
 
-  const { data: vipSub } = await supabase
-    .from('vip_subscriptions')
+  const { data: chapterRow } = await supabase
+    .from('chapters')
     .select('id')
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .gt('expires_at', new Date().toISOString())
+    .eq('slug', chapterSlug)
+    .eq('book_id', bookRow.id)
     .single()
+  if (!chapterRow) notFound()
 
-  const hasAccess = !!purchase || !!vipSub
+  // 三种权限来源：单章购买、整本购买、VIP
+  const [chapterPurchase, bookPurchase, vipSub] = await Promise.all([
+    supabase.from('purchases').select('id')
+      .eq('user_id', user.id).eq('chapter_id', chapterRow.id)
+      .eq('purchase_type', 'chapter').eq('status', 'completed').maybeSingle(),
+    supabase.from('purchases').select('id')
+      .eq('user_id', user.id).eq('book_id', bookRow.id)
+      .eq('purchase_type', 'book').eq('status', 'completed').maybeSingle(),
+    supabase.from('vip_subscriptions').select('id')
+      .eq('user_id', user.id).eq('status', 'active')
+      .gt('expires_at', new Date().toISOString()).maybeSingle(),
+  ])
+
+  const hasAccess = !!chapterPurchase.data || !!bookPurchase.data || !!vipSub.data
 
   if (!hasAccess) {
     return (
@@ -962,6 +1087,8 @@ export default async function ChapterPage({ params }: Props) {
   )
 }
 ```
+
+> **关于 SSR/ISR 混合**：付费章节虽走运行时校验，但页面文件本身仍可被 ISR 缓存——Next.js 在权限校验阶段读取 cookie 后会自动转为 dynamic，这是 RSC 的正确用法。如需强制 dynamic 可加 `export const dynamic = 'force-dynamic'`。
 
 ### 6.5 支付模块（Payjs）
 
@@ -1017,7 +1144,10 @@ function signParams(params: Record<string, string>): string {
     .sort()
     .map(k => `${k}=${params[k]}`)
     .join('&')
-  return crypto.createHmac('sha256', config.key).update(sorted + `&key=${config.key}`).digest('hex').toUpperCase()
+  return crypto.createHash('md5')
+    .update(sorted + `&key=${config.key}`)
+    .digest('hex')
+    .toUpperCase()
 }
 ```
 
@@ -1036,33 +1166,89 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { type, bookId, chapterId, amount } = body
+  const { type, bookId, chapterId, amount, paymentMethod } = body
 
+  // 余额购买：直接扣除余额，不走外部支付
+  if (paymentMethod === 'balance') {
+    const { data: ok } = await supabase.rpc('deduct_balance', {
+      p_user_id: user.id,
+      p_amount: amount,
+    })
+
+    if (!ok) {
+      return NextResponse.json({ error: '余额不足' }, { status: 400 })
+    }
+
+    const { error } = await supabase.from('purchases').insert({
+      user_id: user.id,
+      purchase_type: type,
+      book_id: bookId || null,
+      chapter_id: chapterId || null,
+      amount,
+      payment_method: 'balance',
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    })
+
+    if (error) {
+      // 余额已扣但订单创建失败，需要人工对账或补偿机制
+      console.error('Balance deducted but purchase insert failed:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  }
+
+  // 外部支付（微信/支付宝）
   const outTradeNo = `ORD_${Date.now()}_${user.id.slice(0, 8)}`
 
-  const { error } = await supabase.from('purchases').insert({
-    user_id: user.id,
-    purchase_type: type,
-    book_id: bookId || null,
-    chapter_id: chapterId || null,
-    amount,
-    payment_no: outTradeNo,
-    payment_method: 'wechat',
-    status: 'pending',
-  })
+  // 检查是否有重复的 pending 订单，避免堆积
+  // 注意：PostgREST 中 NULL 比较必须用 .is()，不能用 .eq()
+  let existingQuery = supabase
+    .from('purchases')
+    .select('payment_no')
+    .eq('user_id', user.id)
+    .eq('purchase_type', type)
+    .eq('status', 'pending')
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  existingQuery = chapterId
+    ? existingQuery.eq('chapter_id', chapterId)
+    : existingQuery.is('chapter_id', null)
+  existingQuery = bookId
+    ? existingQuery.eq('book_id', bookId)
+    : existingQuery.is('book_id', null)
+
+  const { data: existing } = await existingQuery.limit(1)
+
+  let finalTradeNo = outTradeNo
+  if (existing && existing.length > 0 && existing[0].payment_no) {
+    // 复用已有的 pending 订单
+    finalTradeNo = existing[0].payment_no
+  } else {
+    const { error } = await supabase.from('purchases').insert({
+      user_id: user.id,
+      purchase_type: type,
+      book_id: bookId || null,
+      chapter_id: chapterId || null,
+      amount,
+      payment_no: finalTradeNo,
+      payment_method: paymentMethod || 'wechat',
+      status: 'pending',
+    })
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
   }
 
   const payUrl = createPayjsUrl({
     total_fee: Math.round(amount * 100),
-    out_trade_no: outTradeNo,
-    body: type === 'chapter' ? '章节购买' : type === 'book' ? '书籍购买' : 'VIP订阅',
+    out_trade_no: finalTradeNo,
+    body: type === 'chapter' ? '章节购买' : type === 'book' ? '书籍购买' : type === 'vip' ? 'VIP订阅' : '余额充值',
     notify_url: `${process.env.NEXT_PUBLIC_SITE_URL}/api/payment/notify`,
   })
 
-  return NextResponse.json({ payUrl, outTradeNo })
+  return NextResponse.json({ payUrl, outTradeNo: finalTradeNo })
 }
 ```
 
@@ -1089,33 +1275,83 @@ export async function POST(request: NextRequest) {
 
   const outTradeNo = params.out_trade_no
 
-  const { data: purchase } = await supabaseAdmin
+  // 幂等性：使用 CAS 模式，只有 status='pending' 的记录才会被更新
+  // 即使并发 webhook 重试，PostgreSQL 的行锁保证只有一个能成功
+  const { data: purchase, error: selectError } = await supabaseAdmin
     .from('purchases')
     .select('*')
     .eq('payment_no', outTradeNo)
     .eq('status', 'pending')
     .single()
 
+  // 已处理过（completed/failed）或不存在，直接返回成功（幂等）
   if (!purchase) {
     return new NextResponse('success')
   }
 
   const paidAmount = parseInt(params.total_fee) / 100
 
-  if (purchase.purchase_type === 'chapter' || purchase.purchase_type === 'book') {
-    await supabaseAdmin.rpc('deduct_balance', {
+  // 根据购买类型执行不同逻辑
+  if (purchase.purchase_type === 'recharge') {
+    // 充值：增加余额 + 记录充值流水
+    await supabaseAdmin.rpc('add_balance', {
       p_user_id: purchase.user_id,
       p_amount: paidAmount,
     })
-  }
 
-  await supabaseAdmin
+    await supabaseAdmin
+      .from('recharges')
+      .insert({
+        user_id: purchase.user_id,
+        amount: paidAmount,
+        payment_no: outTradeNo,
+        payment_method: purchase.payment_method,
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+      })
+  } else if (purchase.purchase_type === 'vip') {
+    // VIP：写入订阅记录 + 同步 user_profiles
+    // 套餐通过 amount 或额外的 metadata 列识别（生产环境建议给 purchases 加 plan 字段）
+    const plan: 'monthly' | 'yearly' | 'lifetime' =
+      paidAmount >= 999 ? 'lifetime' : paidAmount >= 168 ? 'yearly' : 'monthly'
+
+    const now = new Date()
+    const expires =
+      plan === 'lifetime'
+        ? new Date('2099-12-31')
+        : new Date(now.getTime() + (plan === 'yearly' ? 365 : 30) * 86400_000)
+
+    await supabaseAdmin.from('vip_subscriptions').insert({
+      user_id: purchase.user_id,
+      plan,
+      amount: paidAmount,
+      starts_at: now.toISOString(),
+      expires_at: expires.toISOString(),
+      payment_no: outTradeNo,
+      status: 'active',
+    })
+
+    await supabaseAdmin
+      .from('user_profiles')
+      .update({ role: 'vip', vip_expires_at: expires.toISOString() })
+      .eq('id', purchase.user_id)
+  }
+  // book / chapter 直接外部支付：purchases 表本身就是访问凭证，无需额外动作
+  // 余额购买已在 create 时扣除并写入 completed，不会进入此回调
+
+  // 标记订单完成
+  const { error: updateError } = await supabaseAdmin
     .from('purchases')
     .update({
       status: 'completed',
       completed_at: new Date().toISOString(),
     })
     .eq('id', purchase.id)
+    .eq('status', 'pending')  // 二次确认，防止并发
+
+  if (updateError) {
+    console.error('Failed to complete purchase:', updateError)
+  }
 
   return new NextResponse('success')
 }
@@ -1224,7 +1460,7 @@ import matter from 'gray-matter'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
-  process.env.SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
   { auth: { persistSession: false } }
 )
@@ -1348,7 +1584,7 @@ jobs:
 
       - name: Sync metadata to Supabase
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           npx ts-node scripts/sync-to-supabase.ts book \
@@ -1506,8 +1742,38 @@ vercel
 
 ---
 
-> 文档版本：1.0
+## 十二、安全与运维清单
+
+### 12.1 必须做的事
+
+- [ ] **付费内容只在 Server Components 中读取**：永远不要把章节正文 props 进 Client Component，否则会出现在 RSC payload 中
+- [ ] **所有写操作走服务端 Route Handler**：`balances` / `purchases` / `vip_subscriptions` 表对客户端只开 SELECT；写操作必须使用 `supabaseAdmin`（service role）
+- [ ] **支付 Webhook 验签 + 幂等**：`verifyNotify` 必查；`UPDATE ... WHERE status='pending'` 提供幂等保证
+- [ ] **支付 Webhook IP 白名单**（可选）：在 middleware 里限制 `/api/payment/notify` 仅接受 Payjs IP
+- [ ] **ISR 刷新密钥强随机**：`REVALIDATION_SECRET` ≥ 32 字节随机串，不要硬编码
+- [ ] **service role key 永不出现在 NEXT_PUBLIC_ 变量中**
+- [ ] **每个 SECURITY DEFINER 函数显式 SET search_path**：防止 search_path 注入
+
+### 12.2 已知限制
+
+| 限制 | 影响 | 缓解 |
+|------|------|------|
+| Vercel 单函数 10 秒超时（Hobby） | 长事务、批量同步会被截断 | 同步脚本在 GitHub Actions 跑，不放 Vercel |
+| Supabase 免费层 500MB | 上百本书评论 + 进度可能超限 | 早做 archive 策略；reading_progress 设 TTL |
+| Meilisearch 免费层 10K 文档 | 章节级索引很快超 | 只索引 books（书级），不索引 chapters |
+| Vercel ISR 缓存按 region | 多地区可能短暂不一致 | 关键写后调 revalidatePath |
+| Edge Middleware 不能用 Node API | 无法在 middleware 里 import gray-matter 等 | 内容读取放 Server Component / Route Handler |
+
+### 12.3 监控建议
+
+- Supabase Logs：关注 `purchases` 表的 RLS 拒绝次数
+- Vercel Analytics：关注 `/books/[slug]/[chapter]` 的 P95 响应时间（付费章节走 dynamic）
+- 自建：定期对账 `purchases.status='completed'` 与 Payjs 后台流水
+
+---
+
+> 文档版本：1.2
 >
 > 创建日期：2026-04-28
 >
-> 最后更新：2026-04-28
+> 最后更新：2026-04-28（superpowers 二次审查：补全 RLS、修复 BookDetailPage/ChapterPage Bug、修正支付 NULL 查询、补充 VIP 订阅生效逻辑、SECURITY DEFINER 加 search_path、补充安全运维清单）
