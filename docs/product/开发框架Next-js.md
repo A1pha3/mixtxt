@@ -8,7 +8,7 @@
 >
 > 项目规模：多本书籍（初期几本，未来可达上百本），AI 写作自动化
 >
-> 前置文档：[小说网站开发框架调研推荐-模型名.md](./小说网站开发框架调研推荐-模型名.md)
+> 前置文档：[开发框架方案对比与推荐.md](./开发框架方案对比与推荐.md)
 
 ---
 
@@ -128,7 +128,7 @@ CREATE TABLE user_profiles (
   username TEXT UNIQUE,
   avatar_url TEXT,
   bio TEXT,
-  role TEXT DEFAULT 'user' CHECK (role IN ('user', 'vip', 'admin')),
+  role TEXT DEFAULT 'user' CHECK (role IN ('user', 'editor', 'admin')),
   vip_expires_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -367,17 +367,19 @@ CREATE POLICY "Users can update own profile"
   WITH CHECK (auth.uid() = id);
 
 -- 注意：不允许客户端修改 role / vip_expires_at，需通过 SECURITY DEFINER 函数或 admin 客户端
+-- VIP 不是 role，而是订阅状态。role 只用于后台权限（user / editor / admin）
+-- VIP 状态通过 vip_subscriptions 表推导，不存储在 role 字段中
 
 CREATE POLICY "Public books are viewable by everyone"
   ON books FOR SELECT
   USING (is_published = true AND is_deleted = false);
 
-CREATE POLICY "Admins can manage books"
+CREATE POLICY "Admins and editors can manage books"
   ON books FOR ALL
   USING (
     EXISTS (
       SELECT 1 FROM user_profiles
-      WHERE id = auth.uid() AND role = 'admin'
+      WHERE id = auth.uid() AND role IN ('admin', 'editor')
     )
   );
 
@@ -410,12 +412,12 @@ CREATE POLICY "Published chapters viewable with access check"
     )
   );
 
-CREATE POLICY "Admins can manage chapters"
+CREATE POLICY "Admins and editors can manage chapters"
   ON chapters FOR ALL
   USING (
     EXISTS (
       SELECT 1 FROM user_profiles
-      WHERE id = auth.uid() AND role = 'admin'
+      WHERE id = auth.uid() AND role IN ('admin', 'editor')
     )
   );
 
@@ -424,10 +426,10 @@ CREATE POLICY "Users can view own purchases"
   ON purchases FOR SELECT
   USING (auth.uid() = user_id);
 
-CREATE POLICY "Admins can manage purchases"
+CREATE POLICY "Admins and editors can manage purchases"
   ON purchases FOR ALL
   USING (
-    EXISTS (SELECT 1 FROM user_profiles WHERE id = auth.uid() AND role = 'admin')
+    EXISTS (SELECT 1 FROM user_profiles WHERE id = auth.uid() AND role IN ('admin', 'editor'))
   );
 
 -- recharges：同上
@@ -477,12 +479,12 @@ CREATE POLICY "Users can delete own comments"
   ON comments FOR DELETE
   USING (auth.uid() = user_id);
 
-CREATE POLICY "Admins can manage comments"
+CREATE POLICY "Admins and editors can manage comments"
   ON comments FOR ALL
   USING (
     EXISTS (
       SELECT 1 FROM user_profiles
-      WHERE id = auth.uid() AND role = 'admin'
+      WHERE id = auth.uid() AND role IN ('admin', 'editor')
     )
   );
 ```
@@ -557,6 +559,39 @@ BEGIN
 
   GET DIAGNOSTICS affected = ROW_COUNT;
   RETURN affected = 1;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- 原子余额购买：在单个事务中完成扣款 + 创建订单，避免中间状态
+CREATE OR REPLACE FUNCTION purchase_with_balance(
+  p_user_id UUID,
+  p_purchase_type TEXT,
+  p_book_id UUID,
+  p_chapter_id UUID,
+  p_amount DECIMAL
+)
+RETURNS TABLE (success BOOLEAN, purchase_id UUID) AS $$
+DECLARE
+  v_deducted BOOLEAN;
+  v_purchase_id UUID;
+BEGIN
+  IF p_amount <= 0 THEN
+    RAISE EXCEPTION 'Amount must be positive';
+  END IF;
+
+  -- 先扣款
+  v_deducted := deduct_balance(p_user_id, p_amount);
+  IF NOT v_deducted THEN
+    RETURN QUERY SELECT false, NULL::UUID;
+    RETURN;
+  END IF;
+
+  -- 再创建订单
+  INSERT INTO purchases (user_id, purchase_type, book_id, chapter_id, amount, payment_method, status, completed_at)
+  VALUES (p_user_id, p_purchase_type, p_book_id, p_chapter_id, p_amount, 'balance', 'completed', NOW())
+  RETURNING id INTO v_purchase_id;
+
+  RETURN QUERY SELECT true, v_purchase_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 ```
@@ -761,7 +796,7 @@ export async function middleware(request: NextRequest) {
       .eq('id', user.id)
       .single()
 
-    if (profile?.role !== 'admin') {
+    if (!profile || !['admin', 'editor'].includes(profile.role)) {
       return NextResponse.redirect(new URL('/', request.url))
     }
   }
@@ -942,6 +977,7 @@ export default async function BookDetailPage({
     .single()
   const bookId = bookRow?.id
 
+  // VIP 状态从 vip_subscriptions 推导，不从 role 字段判断
   let purchasedChapterIds: Set<string> = new Set()
   let isVip = false
   let hasBookPurchase = false
@@ -962,6 +998,7 @@ export default async function BookDetailPage({
       p => p.purchase_type === 'book' && p.book_id === bookId
     )
 
+    // 从 vip_subscriptions 表判断 VIP 状态，不使用 role 字段
     const { data: vipSub } = await supabase
       .from('vip_subscriptions')
       .select('id')
@@ -1168,32 +1205,22 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const { type, bookId, chapterId, amount, paymentMethod } = body
 
-  // 余额购买：直接扣除余额，不走外部支付
+  // 余额购买：使用原子函数在单个事务中完成扣款 + 创建订单
   if (paymentMethod === 'balance') {
-    const { data: ok } = await supabase.rpc('deduct_balance', {
+    const { data, error } = await supabase.rpc('purchase_with_balance', {
       p_user_id: user.id,
+      p_purchase_type: type,
+      p_book_id: bookId || null,
+      p_chapter_id: chapterId || null,
       p_amount: amount,
     })
 
-    if (!ok) {
-      return NextResponse.json({ error: '余额不足' }, { status: 400 })
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const { error } = await supabase.from('purchases').insert({
-      user_id: user.id,
-      purchase_type: type,
-      book_id: bookId || null,
-      chapter_id: chapterId || null,
-      amount,
-      payment_method: 'balance',
-      status: 'completed',
-      completed_at: new Date().toISOString(),
-    })
-
-    if (error) {
-      // 余额已扣但订单创建失败，需要人工对账或补偿机制
-      console.error('Balance deducted but purchase insert failed:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!data?.success) {
+      return NextResponse.json({ error: '余额不足' }, { status: 400 })
     }
 
     return NextResponse.json({ success: true })
@@ -1331,9 +1358,11 @@ export async function POST(request: NextRequest) {
       status: 'active',
     })
 
+    // 只更新 vip_expires_at，不修改 role 字段
+    // VIP 状态由 vip_subscriptions 表推导，role 专用于后台权限（user / editor / admin）
     await supabaseAdmin
       .from('user_profiles')
-      .update({ role: 'vip', vip_expires_at: expires.toISOString() })
+      .update({ vip_expires_at: expires.toISOString() })
       .eq('id', purchase.user_id)
   }
   // book / chapter 直接外部支付：purchases 表本身就是访问凭证，无需额外动作

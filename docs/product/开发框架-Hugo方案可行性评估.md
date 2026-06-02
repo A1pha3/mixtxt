@@ -88,7 +88,7 @@ if (!user.hasVip()) { document.body.innerHTML = '请付费'; }
 |----------|------|
 | **Sanity.io / Contentful** | 内容管理后台（替代 Payload CMS） |
 | **Supabase / Firebase** | 用户认证 + 数据库 + 实时订阅 |
-| **Paddle / LemonSqueezy** | 支付（比 Payjs 更适合 SaaS/数字产品） |
+| **Payjs / 微信支付宝直连** | 支付（面向国内用户，个人开发者可用） |
 | **Railway / Fly.io** | 部署 serverless functions 处理 webhook |
 | **Vercel / Netlify** | 部署 Hugo，边缘分发 |
 
@@ -123,7 +123,7 @@ if (!user.hasVip()) { document.body.innerHTML = '请付费'; }
 ┌─────────────────────────────────────────────────────────────┐
 │                     Serverless Functions                    │
 │  Railway / Vercel Functions                                  │
-│  - 支付 webhook（Stripe/Paddle callback）                   │
+│  - 支付 webhook（Payjs callback）                   │
 │  - 权限校验 API                                              │
 │  - 章节内容动态接口                                           │
 └─────────────────────────────────────────────────────────────┘
@@ -217,7 +217,7 @@ Hugo 真正适合的场景：
 
 1. **接受全文免费**，不做付费章节（那 Hugo 很合适）
 2. **接受用户体系全靠第三方**（用 Firebase Auth + Firestore 存储用户数据）
-3. **接受支付靠 Paddle/Stripe 等平台处理**（它们有托管页面，不需自己接 webhook）
+3. **接受支付靠第三方平台托管页面处理**（如 Payjs 收银台，不需自己接 webhook）
 4. **接受 SEO 牺牲**（动态加载的内容搜索引擎抓不到）
 
 ---
