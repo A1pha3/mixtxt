@@ -183,7 +183,7 @@ export default defineConfig({
 });
 ```
 
-`site` 必须和 `src/content/site.json` 的 `baseUrl` 保持一致，用于 canonical URL、RSS 链接和 sitemap 链接生成。
+`site` 必须和 `src/data/site.json` 的 `baseUrl` 保持一致，用于 canonical URL、RSS 链接和 sitemap 链接生成。
 
 ## 五、仓库结构
 
@@ -195,6 +195,7 @@ mixtxt-astro/
 ├── astro.config.mjs
 ├── package.json
 ├── package-lock.json 或 pnpm-lock.yaml
+├── functions/          # Cloudflare Pages Functions（后置，第二阶段启用）
 ├── public/
 │   ├── covers/
 │   ├── images/
@@ -205,8 +206,9 @@ mixtxt-astro/
 │   └── _headers
 ├── src/
 │   ├── content.config.ts
+│   ├── data/
+│   │   └── site.json
 │   ├── content/
-│   │   ├── site.json
 │   │   ├── books/
 │   │   │   └── sanguo-scifi.json
 │   │   ├── chapters/
@@ -252,7 +254,8 @@ mixtxt-astro/
 │   │   ├── search.astro
 │   │   ├── about.astro
 │   │   ├── rss.xml.ts
-│   │   └── sitemap.xml.ts
+│   │   ├── sitemap.xml.ts
+│   │   └── 404.astro
 │   └── styles/
 │       ├── global.css
 │       ├── reader.css
@@ -293,7 +296,7 @@ sanguo-scifi-002-huangjin.md
 
 | 类型 | 路径 | 格式 | 用途 |
 |-----------|------|------|------|
-| site config | `src/content/site.json` | JSON | 网站标题、描述、作者、社交链接 |
+| site config | `src/data/site.json` | JSON | 网站标题、描述、作者、社交链接 |
 | books | `src/content/books/*.json` | JSON | 书籍元数据 |
 | chapters | `src/content/chapters/*.md` | Markdown + YAML frontmatter | 章节正文 |
 | releases | `src/content/releases/*.md` | Markdown + YAML frontmatter | 发布版本说明 |
@@ -301,7 +304,7 @@ sanguo-scifi-002-huangjin.md
 
 ### 6.1 site
 
-`src/content/site.json`：
+`src/data/site.json`：
 
 ```json
 {
@@ -360,6 +363,8 @@ sanguo-scifi-002-huangjin.md
 | updatedAt | date | 是 | 更新时间 |
 | seo | object | 否 | SEO 标题和描述 |
 
+**`copyrightStatus` 与 `visibility` 约束**：`copyrightStatus` 为 `private-draft` 时，`visibility` 必须为 `hidden`；`copyrightStatus` 为 `unknown` 时，`visibility` 不能为 `public`。构建校验脚本会强制检查这些规则，违反时构建失败。
+
 ### 6.3 chapters
 
 `src/content/chapters/sanguo-scifi-002-huangjin.md`：
@@ -368,7 +373,6 @@ sanguo-scifi-002-huangjin.md
 ---
 book: "sanguo-scifi"
 chapterNo: "002"
-order: 2
 title: "黄巾初起"
 slug: "huangjin"
 status: "published"
@@ -396,12 +400,11 @@ seo:
 |------|------|------|------|
 | book | string | 是 | 对应 book slug |
 | chapterNo | string | 是 | 三位章节号，如 `001` |
-| order | number | 是 | 排序数字 |
 | title | string | 是 | 章节标题 |
 | slug | string | 是 | 章节 URL 标识 |
 | status | enum | 是 | `draft`、`review`、`published`、`archived` |
 | summary | text | 是 | 章节摘要 |
-| wordCount | number | 否 | 字数，可由脚本后续生成 |
+| wordCount | number | 否 | 字数，由构建脚本自动计算 |
 | createdAt | date | 是 | 创建日期 |
 | updatedAt | date | 是 | 更新时间 |
 | ai | object | 否 | AI 使用记录 |
@@ -461,7 +464,8 @@ updatedAt: "2026-06-03"
 `src/content.config.ts`：
 
 ```ts
-import { defineCollection, z } from "astro:content";
+import { defineCollection } from "astro:content";
+import { z } from "astro/zod";
 import { glob } from "astro/loaders";
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -504,7 +508,6 @@ const chapters = defineCollection({
   schema: z.object({
     book: z.string().regex(slugPattern),
     chapterNo: z.string().regex(chapterNoPattern),
-    order: z.number().int().positive(),
     title: z.string(),
     slug: z.string().regex(slugPattern),
     status: z.enum(["draft", "review", "published", "archived"]),
@@ -556,7 +559,7 @@ export const collections = {
 
 这段 schema 是实现时的硬约束。AI 实现项目时，不应随意改字段名；如果要改，必须同时更新 Pages CMS 配置、页面查询逻辑和示例内容。
 
-`src/content/site.json` 不在这里注册。它由 `src/lib/site.ts` 直接读取；字段完整性由 `scripts/validate-content.mjs` 检查。
+`src/data/site.json` 不在这里注册。它由 `src/lib/site.ts` 直接读取；字段完整性由 `scripts/validate-content.mjs` 检查。
 
 ## 八、内容查询工具
 
@@ -565,7 +568,7 @@ export const collections = {
 `src/lib/site.ts`：
 
 ```ts
-import site from "../content/site.json";
+import site from "../data/site.json";
 
 export function getSiteConfig() {
   return site;
@@ -596,7 +599,7 @@ export async function getPublishedChapters(bookSlug?: string) {
   return chapters
     .filter((chapter) => chapter.data.status === "published")
     .filter((chapter) => !bookSlug || chapter.data.book === bookSlug)
-    .sort((a, b) => a.data.order - b.data.order);
+    .sort((a, b) => a.data.chapterNo.localeCompare(b.data.chapterNo));
 }
 
 export async function getRecentChapters(limit = 10) {
@@ -644,7 +647,7 @@ media:
     input: public/images/chapters
     output: /images/chapters
     rename: safe
-    categories: [image]
+    extensions: [jpg, jpeg, png, webp, svg]
 
 components:
   seo:
@@ -662,7 +665,7 @@ content:
   - name: site
     label: 网站设置
     type: file
-    path: src/content/site.json
+    path: src/data/site.json
     format: json
     fields:
       - name: title
@@ -691,333 +694,321 @@ content:
         label: 版权说明
         type: text
 
-  - name: creation
-    label: 创作内容
-    type: group
-    items:
-      - name: books
-        label: 书籍
-        type: collection
-        path: src/content/books
-        format: json
-        filename: "{slug}.json"
-        view:
-          fields: [title, status, visibility, updatedAt]
-          primary: title
-          sort: [updatedAt, title]
-          search: [title, slug, summary]
-          default:
-            sort: updatedAt
-            order: desc
-        fields:
-          - name: title
-            label: 书名
-            type: string
-            required: true
-          - name: slug
-            label: Slug
-            type: string
-            required: true
-            pattern:
-              regex: "^[a-z0-9]+(-[a-z0-9]+)*$"
-              message: "只能使用小写英文、数字和短横线"
-          - name: original
-            label: 原作
-            type: string
-          - name: author
-            label: 原作作者
-            type: string
-          - name: adaptor
-            label: 改编者
-            type: string
-          - name: status
-            label: 连载状态
-            type: select
-            required: true
-            options:
-              values:
-                - name: planning
-                  label: 计划中
-                - name: serializing
-                  label: 连载中
-                - name: completed
-                  label: 已完结
-                - name: paused
-                  label: 暂停
-          - name: visibility
-            label: 可见性
-            type: select
-            required: true
-            options:
-              values:
-                - name: public
-                  label: 公开
-                - name: hidden
-                  label: 隐藏
-          - name: summary
-            label: 简介
-            type: text
-            required: true
-          - name: cover
-            label: 封面
-            type: image
-            options:
-              media: covers
-          - name: tags
-            label: 标签
-            type: select
-            options:
-              multiple: true
-              values:
-                - name: ai-rewrite
-                  label: AI 改编
-                - name: scifi
-                  label: 科幻
-                - name: fantasy
-                  label: 奇幻
-                - name: history
-                  label: 历史
-                - name: public-domain
-                  label: 公版
-          - name: copyrightStatus
-            label: 版权状态
-            type: select
-            required: true
-            options:
-              values:
-                - name: public-domain
-                  label: 公版
-                - name: authorized
-                  label: 已授权
-                - name: private-draft
-                  label: 私人草稿
-                - name: unknown
-                  label: 未确认
-          - name: startedAt
-            label: 开始日期
-            type: date
-            required: true
-          - name: updatedAt
-            label: 更新日期
-            type: date
-            required: true
-          - name: seo
-            label: SEO
-            component: seo
+  - name: books
+    label: 书籍
+    type: collection
+    path: src/content/books
+    format: json
+    filename: "{slug}.json"
+    view:
+      fields: [title, status, visibility, updatedAt]
+      primary: title
+      sort: [updatedAt, title]
+      search: [title, slug, summary]
+      default:
+        sort: updatedAt
+        order: desc
+    fields:
+      - name: title
+        label: 书名
+        type: string
+        required: true
+      - name: slug
+        label: Slug
+        type: string
+        required: true
+        pattern:
+          regex: "^[a-z0-9]+(-[a-z0-9]+)*$"
+          message: "只能使用小写英文、数字和短横线"
+      - name: original
+        label: 原作
+        type: string
+      - name: author
+        label: 原作作者
+        type: string
+      - name: adaptor
+        label: 改编者
+        type: string
+      - name: status
+        label: 连载状态
+        type: select
+        required: true
+        options:
+          values:
+            - name: planning
+              label: 计划中
+            - name: serializing
+              label: 连载中
+            - name: completed
+              label: 已完结
+            - name: paused
+              label: 暂停
+      - name: visibility
+        label: 可见性
+        type: select
+        required: true
+        options:
+          values:
+            - name: public
+              label: 公开
+            - name: hidden
+              label: 隐藏
+      - name: summary
+        label: 简介
+        type: text
+        required: true
+      - name: cover
+        label: 封面
+        type: image
+        options:
+          media: covers
+      - name: tags
+        label: 标签
+        type: string
+        options:
+          multiple: true
+        # 自由输入标签，不限制选项；如需预设标签可改回 select + values
+      - name: copyrightStatus
+        label: 版权状态
+        type: select
+        required: true
+        options:
+          values:
+            - name: public-domain
+              label: 公版
+            - name: authorized
+              label: 已授权
+            - name: private-draft
+              label: 私人草稿
+            - name: unknown
+              label: 未确认
+      - name: startedAt
+        label: 开始日期
+        type: date
+        required: true
+      - name: updatedAt
+        label: 更新日期
+        type: date
+        required: true
+        readonly: true
+        # 由构建脚本自动更新，作者无需手动修改
+      - name: seo
+        label: SEO
+        component: seo
 
-      - name: chapters
-        label: 章节
-        type: collection
-        path: src/content/chapters
-        format: yaml-frontmatter
-        filename: "{book}-{chapterNo}-{slug}.md"
-        view:
-          fields: [title, book, chapterNo, status, updatedAt]
-          primary: title
-          sort: [book, order, updatedAt]
-          search: [title, summary, book]
-          default:
-            sort: updatedAt
-            order: desc
+  - name: chapters
+    label: 章节
+    type: collection
+    path: src/content/chapters
+    format: yaml-frontmatter
+    filename: "{book}-{chapterNo}-{slug}.md"
+    view:
+      fields: [title, book, chapterNo, status, updatedAt]
+      primary: title
+      sort: [book, updatedAt]
+      search: [title, summary, book]
+      default:
+        sort: updatedAt
+        order: desc
+    fields:
+      - name: book
+        label: 所属书籍
+        type: reference
+        required: true
+        options:
+          collection: books
+          search: "title,slug,summary"
+          value: "{slug}"
+          label: "{title}"
+      - name: chapterNo
+        label: 章节号
+        type: string
+        required: true
+        pattern:
+          regex: "^[0-9]{3}$"
+          message: "使用三位数字，例如 001"
+      - name: title
+        label: 章节标题
+        type: string
+        required: true
+      - name: slug
+        label: Slug
+        type: string
+        required: true
+        pattern:
+          regex: "^[a-z0-9]+(-[a-z0-9]+)*$"
+          message: "只能使用小写英文、数字和短横线"
+      - name: status
+        label: 状态
+        type: select
+        required: true
+        options:
+          values:
+            - name: draft
+              label: 草稿
+            - name: review
+              label: 待检查
+            - name: published
+              label: 已发布
+            - name: archived
+              label: 已归档
+      - name: summary
+        label: 摘要
+        type: text
+        required: true
+      - name: wordCount
+        label: 字数
+        type: number
+        hidden: true
+        # 由构建脚本自动计算，作者无需手动填写
+      - name: createdAt
+        label: 创建日期
+        type: date
+        required: true
+      - name: updatedAt
+        label: 更新日期
+        type: date
+        required: true
+        readonly: true
+        # 由构建脚本自动更新，作者无需手动修改
+      - name: ai
+        label: AI 使用记录
+        type: object
         fields:
-          - name: book
-            label: 所属书籍
-            type: reference
-            required: true
-            options:
-              collection: books
-              search: "title,slug,summary"
-              value: "{slug}"
-              label: "{title}"
-          - name: chapterNo
-            label: 章节号
+          - name: model
+            label: 模型或来源
             type: string
-            required: true
-            pattern:
-              regex: "^[0-9]{3}$"
-              message: "使用三位数字，例如 001"
-          - name: order
-            label: 排序
-            type: number
-            required: true
-          - name: title
-            label: 章节标题
+          - name: prompt
+            label: 使用的提示词 slug
             type: string
-            required: true
-          - name: slug
-            label: Slug
-            type: string
-            required: true
-            pattern:
-              regex: "^[a-z0-9]+(-[a-z0-9]+)*$"
-              message: "只能使用小写英文、数字和短横线"
-          - name: status
-            label: 状态
-            type: select
-            required: true
-            options:
-              values:
-                - name: draft
-                  label: 草稿
-                - name: review
-                  label: 待检查
-                - name: published
-                  label: 已发布
-                - name: archived
-                  label: 已归档
-          - name: summary
-            label: 摘要
-            type: text
-            required: true
-          - name: wordCount
-            label: 字数
-            type: number
-          - name: createdAt
-            label: 创建日期
-            type: date
-            required: true
-          - name: updatedAt
-            label: 更新日期
-            type: date
-            required: true
-          - name: ai
-            label: AI 使用记录
-            type: object
-            fields:
-              - name: model
-                label: 模型或来源
-                type: string
-              - name: prompt
-                label: 使用的提示词 slug
-                type: string
-              - name: humanEdited
-                label: 已人工修订
-                type: boolean
-          - name: seo
-            label: SEO
-            component: seo
-          - name: body
-            label: 正文
-            type: rich-text
-            required: true
-            options:
-              format: markdown
-              media: chapter_images
-              switcher: true
+          - name: humanEdited
+            label: 已人工修订
+            type: boolean
+      - name: seo
+        label: SEO
+        component: seo
+      - name: body
+        label: 正文
+        type: rich-text
+        required: true
+        options:
+          format: markdown
+          media: chapter_images
+          switcher: true
 
-      - name: releases
+  - name: releases
+    label: 版本说明
+    type: collection
+    path: src/content/releases
+    format: yaml-frontmatter
+    filename: "{book}-{versionSlug}.md"
+    view:
+      fields: [title, book, version, date]
+      primary: title
+      sort: [date, book]
+      default:
+        sort: date
+        order: desc
+    fields:
+      - name: book
+        label: 所属书籍
+        type: reference
+        required: true
+        options:
+          collection: books
+          value: "{slug}"
+          label: "{title}"
+      - name: version
+        label: 版本号
+        type: string
+        required: true
+      - name: versionSlug
+        label: 版本 Slug
+        type: string
+        required: true
+        pattern:
+          regex: "^[a-z0-9]+(-[a-z0-9]+)*$"
+          message: "只能使用小写英文、数字和短横线"
+      - name: title
+        label: 标题
+        type: string
+        required: true
+      - name: date
+        label: 发布日期
+        type: date
+        required: true
+      - name: gitTag
+        label: Git tag
+        type: string
+      - name: body
         label: 版本说明
-        type: collection
-        path: src/content/releases
-        format: yaml-frontmatter
-        filename: "{book}-{versionSlug}.md"
-        view:
-          fields: [title, book, version, date]
-          primary: title
-          sort: [date, book]
-          default:
-            sort: date
-            order: desc
-        fields:
-          - name: book
-            label: 所属书籍
-            type: reference
-            required: true
-            options:
-              collection: books
-              value: "{slug}"
-              label: "{title}"
-          - name: version
-            label: 版本号
-            type: string
-            required: true
-          - name: versionSlug
-            label: 版本 Slug
-            type: string
-            required: true
-            pattern:
-              regex: "^[a-z0-9]+(-[a-z0-9]+)*$"
-              message: "只能使用小写英文、数字和短横线"
-          - name: title
-            label: 标题
-            type: string
-            required: true
-          - name: date
-            label: 发布日期
-            type: date
-            required: true
-          - name: gitTag
-            label: Git tag
-            type: string
-          - name: body
-            label: 版本说明
-            type: rich-text
-            options:
-              format: markdown
-              media: false
+        type: rich-text
+        options:
+          format: markdown
+          media: false
 
-      - name: prompts
-        label: AI 提示词
-        type: collection
-        path: src/content/prompts
-        format: yaml-frontmatter
-        filename: "{slug}.md"
-        view:
-          fields: [title, category, status, updatedAt]
-          primary: title
-          sort: [updatedAt, title]
-          search: [title, category]
-          default:
-            sort: updatedAt
-            order: desc
-        fields:
-          - name: title
-            label: 标题
-            type: string
-            required: true
-          - name: slug
-            label: Slug
-            type: string
-            required: true
-            pattern:
-              regex: "^[a-z0-9]+(-[a-z0-9]+)*$"
-              message: "只能使用小写英文、数字和短横线"
-          - name: category
-            label: 类型
-            type: select
-            required: true
-            options:
-              values:
-                - name: rewrite
-                  label: 改写
-                - name: style
-                  label: 风格
-                - name: outline
-                  label: 大纲
-                - name: character
-                  label: 角色
-                - name: review
-                  label: 审稿
-          - name: status
-            label: 状态
-            type: select
-            required: true
-            options:
-              values:
-                - name: active
-                  label: 启用
-                - name: archived
-                  label: 归档
-          - name: updatedAt
-            label: 更新日期
-            type: date
-            required: true
-          - name: body
-            label: 提示词正文
-            type: rich-text
-            options:
-              format: markdown
-              media: false
+  - name: prompts
+    label: AI 提示词
+    type: collection
+    path: src/content/prompts
+    format: yaml-frontmatter
+    filename: "{slug}.md"
+    view:
+      fields: [title, category, status, updatedAt]
+      primary: title
+      sort: [updatedAt, title]
+      search: [title, category]
+      default:
+        sort: updatedAt
+        order: desc
+    fields:
+      - name: title
+        label: 标题
+        type: string
+        required: true
+      - name: slug
+        label: Slug
+        type: string
+        required: true
+        pattern:
+          regex: "^[a-z0-9]+(-[a-z0-9]+)*$"
+          message: "只能使用小写英文、数字和短横线"
+      - name: category
+        label: 类型
+        type: select
+        required: true
+        options:
+          values:
+            - name: rewrite
+              label: 改写
+            - name: style
+              label: 风格
+            - name: outline
+              label: 大纲
+            - name: character
+              label: 角色
+            - name: review
+              label: 审稿
+      - name: status
+        label: 状态
+        type: select
+        required: true
+        options:
+          values:
+            - name: active
+              label: 启用
+            - name: archived
+              label: 归档
+      - name: updatedAt
+        label: 更新日期
+        type: date
+        required: true
+      - name: body
+        label: 提示词正文
+        type: rich-text
+        options:
+          format: markdown
+          media: false
 ```
 
 ### 9.2 Pages CMS 使用约束
@@ -1030,7 +1021,7 @@ content:
 - `book` 字段通过 reference 选择书籍，保存值为 book slug。
 - 封面图写入 `/covers/...`，章节插图写入 `/images/chapters/...`。
 - 不要让 Pages CMS 管理 `src/pages`、`src/components` 等代码文件。
-- 上面的配置把业务 collection 放在 `creation` group 下，方便侧栏分组。Pages CMS 官方说明 `group` 只负责组织菜单，不改变内容存储；如果实际接入时发现 reference 字段无法解析嵌套 group 内的 `books`，就把 `books`、`chapters`、`releases`、`prompts` 四个 collection 提升到 `content` 顶层，字段配置保持不变。
+- Pages CMS 不支持 `type: group`，因此 `books`、`chapters`、`releases`、`prompts` 四个 collection 直接放在 `content` 顶层，与 `site` 同级。如果后续 Pages CMS 新增 group 支持，可以按侧栏分组重新组织。
 
 ## 十、页面设计
 
@@ -1082,7 +1073,7 @@ content:
 章节目录规则：
 
 - 只显示 `status === "published"` 的章节。
-- 按 `order` 升序。
+- 按 `chapterNo` 升序。
 - 标题显示格式：`chapterNo + title`。
 
 ### 10.4 章节页 `/books/[book]/[chapter]/`
@@ -1312,7 +1303,9 @@ mixtxt.reader.theme
 mixtxt.reader.fontSize
 mixtxt.reader.lineHeight
 mixtxt.reader.width
-```
+mixtxt.reader.lastChapter
+
+阅读进度记忆：每次进入章节页时，将 `{bookSlug}/{chapterSlug}` 写入 `mixtxt.reader.lastChapter.{bookSlug}`。首页和书籍详情页可以读取此值，显示"继续阅读"入口。
 
 ### 12.6 SearchBox
 
@@ -1422,6 +1415,20 @@ mixtxt.reader.width
 - 首版在章节正文 `<article>` 上添加 `data-pagefind-body`。一旦站内使用了这个属性，其他想进入搜索的页面也要显式添加，否则 Pagefind 不会索引它们。
 - 首页、书籍页、版本页是否进入搜索要单独决定；不要默认把导航、页脚和管理说明一起索引。
 
+Pagefind 索引决策表：
+
+| 页面类型 | 是否索引 | 需要添加的 data 属性 |
+|---------|---------|-------------------|
+| 章节页正文 | 是 | `data-pagefind-body` |
+| 章节页标题 | 是 | `data-pagefind-meta="title"` |
+| 书籍详情页简介 | 否 | 不添加（书籍信息通过章节间接可搜） |
+| 首页 | 否 | 不添加 |
+| 版本页 | 否 | 不添加 |
+| 搜索页 | 否 | `data-pagefind-ignore` |
+| 导航、页脚 | 否 | `data-pagefind-ignore` |
+
+一旦站内使用了 `data-pagefind-body`，Pagefind 只索引显式标记了该属性的元素。因此上表中的"否"意味着不添加 `data-pagefind-body`，该页面内容不会进入搜索索引。
+
 ### 14.3 搜索结果体验
 
 结果项显示：
@@ -1464,6 +1471,51 @@ RSS 只包含最近发布章节：
 - 链接：章节 URL
 - 日期：`updatedAt`
 - 描述：`summary`
+
+RSS 实现参考（`src/pages/rss.xml.ts`）：
+
+```ts
+import type { APIRoute } from "astro";
+import { getPublishedChapters, getPublicBooks } from "../lib/content";
+import { getSiteConfig } from "../lib/site";
+
+export const GET: APIRoute = async ({ site }) => {
+  const config = getSiteConfig();
+  const chapters = await getPublishedChapters();
+  const books = await getPublicBooks();
+  const bookMap = new Map(books.map((b) => [b.data.slug, b]));
+
+  const items = chapters.slice(0, 20).map((ch) => {
+    const book = bookMap.get(ch.data.book);
+    return `
+    <item>
+      <title><![CDATA[${book?.data.title ?? ""}: ${ch.data.chapterNo} ${ch.data.title}]]></title>
+      <link>${site}books/${ch.data.book}/${ch.data.slug}/</link>
+      <guid isPermaLink="true">${site}books/${ch.data.book}/${ch.data.slug}/</guid>
+      <description><![CDATA[${ch.data.summary}]]></description>
+      <pubDate>${new Date(ch.data.updatedAt).toUTCString()}</pubDate>
+    </item>`;
+  });
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title><![CDATA[${config.title}]]></title>
+    <description><![CDATA[${config.description}]]></description>
+    <link>${site}</link>
+    <atom:link href="${site}rss.xml" rel="self" type="application/rss+xml"/>
+    <language>${config.defaultLanguage}</language>
+    ${items.join("")}
+  </channel>
+</rss>`;
+
+  return new Response(xml, {
+    headers: { "Content-Type": "application/xml; charset=utf-8" },
+  });
+};
+```
+
+注意：Astro 的 RSS 也可以使用 `@astrojs/rss` 包简化生成，首版如果不想手写 XML，可以改用该包。无论哪种方式，都必须只包含 `published` 状态的章节。
 
 ### 15.3 sitemap
 
@@ -1551,6 +1603,9 @@ Build output directory: dist
 ```text
 /*
   Cache-Control: public, max-age=3600
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
 
 /_astro/*
   Cache-Control: public, max-age=31536000, immutable
@@ -1646,6 +1701,11 @@ git push origin main --tags
 - 同一本书内没有重复 chapterNo。
 - published 章节所属 book 必须存在。
 - public book 的 `copyrightStatus` 不能是 `unknown`。
+- `copyrightStatus` 为 `private-draft` 时，`visibility` 必须为 `hidden`。
+- releases 的 `version` 格式应为 semver（如 `v0.1.0`）。
+- chapters 的 `ai.prompt` 引用的 slug 必须在 prompts collection 中存在。
+- books 的 `startedAt` 和 `updatedAt` 必须是合法日期格式（`YYYY-MM-DD`）。
+- chapters 的 `createdAt` 不应晚于 `updatedAt`。
 
 必须提供一个内容校验脚本：
 
@@ -1701,7 +1761,7 @@ async function readJsonDir(dir) {
 }
 
 async function readJsonFile(file) {
-  const fullPath = path.join(contentDir, file);
+  const fullPath = path.join(root, "src/data", file);
   return JSON.parse(await readFile(fullPath, "utf8"));
 }
 
@@ -1755,9 +1815,8 @@ for (const book of books) {
 
 const chapterSlugSet = new Set();
 const chapterNoSet = new Set();
-const chapterOrderSet = new Set();
 for (const chapter of chapters) {
-  const { book, chapterNo, order, slug, status } = chapter.data;
+  const { book, chapterNo, slug, status } = chapter.data;
   if (!bookBySlug.has(book)) fail(`${chapter.file}: book 不存在: ${book}`);
 
   const expected = `${book}-${chapterNo}-${slug}.md`;
@@ -1765,13 +1824,10 @@ for (const chapter of chapters) {
 
   const slugKey = `${book}:${slug}`;
   const noKey = `${book}:${chapterNo}`;
-  const orderKey = `${book}:${order}`;
   if (chapterSlugSet.has(slugKey)) fail(`重复 chapter slug: ${slugKey}`);
   if (chapterNoSet.has(noKey)) fail(`重复 chapterNo: ${noKey}`);
-  if (chapterOrderSet.has(orderKey)) fail(`重复 chapter order: ${orderKey}`);
   chapterSlugSet.add(slugKey);
   chapterNoSet.add(noKey);
-  chapterOrderSet.add(orderKey);
 
   const parentBook = bookBySlug.get(book);
   if (status === "published") {
@@ -1792,6 +1848,42 @@ for (const prompt of prompts) {
   promptSlugs.add(prompt.data.slug);
 }
 
+// 校验 ai.prompt 引用一致性
+for (const chapter of chapters) {
+  if (chapter.data.ai?.prompt && !promptSlugs.has(chapter.data.ai.prompt)) {
+    fail(`${chapter.file}: ai.prompt 引用的 prompt 不存在: ${chapter.data.ai.prompt}`);
+  }
+}
+
+// 校验 copyrightStatus 与 visibility 约束
+for (const book of books) {
+  if (book.data.copyrightStatus === "private-draft" && book.data.visibility !== "hidden") {
+    fail(`${book.file}: copyrightStatus=private-draft 时 visibility 必须为 hidden`);
+  }
+}
+
+// 校验版本号格式
+const semverPattern = /^v?\d+\.\d+\.\d+$/;
+for (const release of releases) {
+  if (!semverPattern.test(release.data.version)) {
+    fail(`${release.file}: version 格式应为 semver，如 v0.1.0`);
+  }
+}
+
+// 校验日期格式
+const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+for (const book of books) {
+  if (!datePattern.test(book.data.startedAt)) fail(`${book.file}: startedAt 日期格式不合法`);
+  if (!datePattern.test(book.data.updatedAt)) fail(`${book.file}: updatedAt 日期格式不合法`);
+}
+for (const chapter of chapters) {
+  if (!datePattern.test(chapter.data.createdAt)) fail(`${chapter.file}: createdAt 日期格式不合法`);
+  if (!datePattern.test(chapter.data.updatedAt)) fail(`${chapter.file}: updatedAt 日期格式不合法`);
+  if (chapter.data.createdAt > chapter.data.updatedAt) {
+    fail(`${chapter.file}: createdAt 不应晚于 updatedAt`);
+  }
+}
+
 if (errors.length > 0) {
   console.error(errors.map((error) => `- ${error}`).join("\n"));
   process.exit(1);
@@ -1807,7 +1899,7 @@ console.log("content validation passed");
 | 页面 | 验收点 |
 |------|--------|
 | 首页 | 书籍和最近更新正确展示 |
-| 书籍页 | 章节按 order 排序，草稿不显示 |
+| 书籍页 | 章节按 chapterNo 排序，草稿不显示 |
 | 章节页 | 上一章 / 下一章正确，不能跨书 |
 | 搜索页 | 能搜到 published 章节，搜不到草稿 |
 | 标签页 | 标签下书籍正确 |
@@ -1927,7 +2019,7 @@ console.log("content validation passed");
 4. 不要改动本文档定义的核心字段名。
 5. 所有内容查询集中到 `src/lib/content.ts`。
 6. 所有页面都通过工具函数获取内容。
-7. 章节导航必须按同一本书内的 `order` 计算。
+7. 章节导航必须按同一本书内的 `chapterNo` 计算。
 8. 搜索索引只能来自构建后的公开页面。
 9. Pages CMS 配置和 Astro schema 必须同步。
 10. 实现完成后必须跑 `npm run build`。
@@ -1951,6 +2043,7 @@ console.log("content validation passed");
 | 文件数超过限制 | Cloudflare Pages 部署失败 | 控制历史版本页数量，必要时拆站或升级 |
 | 原作版权不清 | 网站无法公开运营 | `unknown` 不允许公开构建 |
 | 依赖升级破坏构建 | 发布中断 | 固定 lockfile，升级前本地构建 |
+| 构建失败 | 读者看到旧版本 | Cloudflare Pages 构建失败时旧版本仍在线；建议配置 GitHub Actions 本地构建门控，push 前自动跑 `npm run build`；构建失败时 Cloudflare 会发邮件通知 |
 
 ## 二十三、最终判断
 
@@ -1966,7 +2059,7 @@ console.log("content validation passed");
 ## 附录 A：官方参考
 
 - [Pages CMS Introduction](https://pagescms.org/docs/)：确认 Pages CMS 是面向 GitHub 静态站的开源 CMS，直接编辑仓库文件，不替代站点生成器。
-- [Pages CMS Content](https://pagescms.org/docs/configuration/content/)：确认 `content` 可以定义 collection、file、group，以及 `format`、`filename`、`view`、`actions` 等配置。
+- [Pages CMS Content](https://pagescms.org/docs/configuration/content/)：确认 `content` 可以定义 collection、file，以及 `format`、`filename`、`view`、`actions` 等配置。
 - [Pages CMS Fields](https://pagescms.org/docs/configuration/content/fields/)：确认 `body` 在 frontmatter 文件中映射到正文，字段支持 `required`、`pattern`、`hidden`、`readonly` 等选项。
 - [Pages CMS Media](https://pagescms.org/docs/configuration/media/)：确认 media 的 `input`、`output`、`rename`、`extensions`、`categories` 配置。
 - [Astro Pages CMS Guide](https://docs.astro.build/en/guides/cms/pages-cms/)：确认 Pages CMS 可用于管理 Astro 项目的 Git-based 内容。
