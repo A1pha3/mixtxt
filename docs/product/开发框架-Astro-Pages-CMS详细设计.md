@@ -134,6 +134,57 @@ flowchart LR
 
 首版不要引入数据库、GraphQL、在线 AI 接口、复杂状态管理库。项目最重要的是内容结构稳定和阅读体验顺滑。
 
+### 4.1 推荐依赖与初始化命令
+
+实现时建议用当前稳定版初始化 Astro，并把 lockfile 提交到 GitHub。不要在文档里锁死具体小版本，实际项目以初始化当天的稳定版本为准。
+
+```bash
+npm create astro@latest mixtxt-astro
+cd mixtxt-astro
+npm install
+npm install -D pagefind gray-matter
+```
+
+`package.json` 至少包含：
+
+```json
+{
+  "scripts": {
+    "dev": "astro dev",
+    "validate:content": "node scripts/validate-content.mjs",
+    "build": "npm run validate:content && astro build && pagefind --site dist",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "astro": "latest"
+  },
+  "devDependencies": {
+    "gray-matter": "latest",
+    "pagefind": "latest"
+  }
+}
+```
+
+说明：
+
+- `pagefind` 在 `astro build` 之后运行，负责给 `dist/` 生成静态搜索索引。
+- `gray-matter` 只给内容校验脚本使用，用来可靠读取 Markdown frontmatter。
+- 首版使用 `src/pages/sitemap.xml.ts` 自定义 sitemap，确保 draft、hidden、prompts 默认不进入 sitemap；如果后续改用 `@astrojs/sitemap`，必须重新确认过滤规则。
+- 如果改用 pnpm，命令可替换为 `pnpm create astro@latest`、`pnpm add -D pagefind gray-matter`。
+
+`astro.config.mjs` 至少包含：
+
+```js
+import { defineConfig } from "astro/config";
+
+export default defineConfig({
+  site: "https://mixtxt.example.com",
+  output: "static",
+});
+```
+
+`site` 必须和 `src/content/site.json` 的 `baseUrl` 保持一致，用于 canonical URL、RSS 链接和 sitemap 链接生成。
+
 ## 五、仓库结构
 
 推荐项目目录：
@@ -168,6 +219,7 @@ mixtxt-astro/
 │   │       └── rewrite-style-guide.md
 │   ├── lib/
 │   │   ├── content.ts
+│   │   ├── site.ts
 │   │   ├── seo.ts
 │   │   ├── dates.ts
 │   │   └── reading.ts
@@ -196,8 +248,6 @@ mixtxt-astro/
 │   │   ├── tags/
 │   │   │   └── [tag].astro
 │   │   ├── releases/
-│   │   │   └── index.astro
-│   │   ├── prompts/
 │   │   │   └── index.astro
 │   │   ├── search.astro
 │   │   ├── about.astro
@@ -239,11 +289,11 @@ sanguo-scifi-002-huangjin.md
 
 ## 六、内容模型
 
-内容正本分为五类：
+内容正本分为五类。需要注意：`site.json` 是全站配置文件，不作为 Astro Content Collection 注册；其余四类才进入 `src/content.config.ts`。
 
-| Collection | 路径 | 格式 | 用途 |
+| 类型 | 路径 | 格式 | 用途 |
 |-----------|------|------|------|
-| site | `src/content/site.json` | JSON | 网站标题、描述、作者、社交链接 |
+| site config | `src/content/site.json` | JSON | 网站标题、描述、作者、社交链接 |
 | books | `src/content/books/*.json` | JSON | 书籍元数据 |
 | chapters | `src/content/chapters/*.md` | Markdown + YAML frontmatter | 章节正文 |
 | releases | `src/content/releases/*.md` | Markdown + YAML frontmatter | 发布版本说明 |
@@ -404,7 +454,7 @@ updatedAt: "2026-06-03"
 - 避免解释设定，优先让设定从行动中出现。
 ```
 
-提示词模板是作者侧内容，可以选择不公开。如果公开，应作为“创作方法”页面展示。
+提示词模板是作者侧内容，首版默认不公开；`prompts` collection 只服务创作管理和章节 `ai.prompt` 记录。未来如果公开，应作为“创作方法”页面展示，而不是把完整私有工作流直接暴露给读者。
 
 ## 七、Astro Content Collections
 
@@ -412,7 +462,7 @@ updatedAt: "2026-06-03"
 
 ```ts
 import { defineCollection, z } from "astro:content";
-import { file, glob } from "astro/loaders";
+import { glob } from "astro/loaders";
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const chapterNoPattern = /^[0-9]{3}$/;
@@ -423,19 +473,6 @@ const seoSchema = z
     description: z.string().optional(),
   })
   .optional();
-
-const site = defineCollection({
-  loader: file("./src/content/site.json"),
-  schema: z.object({
-    title: z.string(),
-    description: z.string(),
-    author: z.string(),
-    defaultLanguage: z.string().default("zh-CN"),
-    baseUrl: z.string().url(),
-    github: z.string().url().optional(),
-    copyright: z.string().optional(),
-  }),
-});
 
 const books = defineCollection({
   loader: glob({ pattern: "*.json", base: "./src/content/books" }),
@@ -510,7 +547,6 @@ const prompts = defineCollection({
 });
 
 export const collections = {
-  site,
   books,
   chapters,
   releases,
@@ -520,9 +556,23 @@ export const collections = {
 
 这段 schema 是实现时的硬约束。AI 实现项目时，不应随意改字段名；如果要改，必须同时更新 Pages CMS 配置、页面查询逻辑和示例内容。
 
+`src/content/site.json` 不在这里注册。它由 `src/lib/site.ts` 直接读取；字段完整性由 `scripts/validate-content.mjs` 检查。
+
 ## 八、内容查询工具
 
-建议把内容查询集中到 `src/lib/content.ts`，不要在每个页面里重复写过滤和排序。
+建议把全站配置和 collection 查询分开：`site.json` 通过普通 JSON import 读取，books、chapters、releases、prompts 通过 Astro Content Collections 查询。这样可以避免把单个配置文件误当成 collection，后续页面类型也更清楚。
+
+`src/lib/site.ts`：
+
+```ts
+import site from "../content/site.json";
+
+export function getSiteConfig() {
+  return site;
+}
+```
+
+`src/lib/content.ts` 只处理 collection，不要在每个页面里重复写过滤和排序。
 
 ```ts
 import { getCollection } from "astro:content";
@@ -885,7 +935,9 @@ content:
             label: 版本 Slug
             type: string
             required: true
-            pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+            pattern:
+              regex: "^[a-z0-9]+(-[a-z0-9]+)*$"
+              message: "只能使用小写英文、数字和短横线"
           - name: title
             label: 标题
             type: string
@@ -927,7 +979,9 @@ content:
             label: Slug
             type: string
             required: true
-            pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+            pattern:
+              regex: "^[a-z0-9]+(-[a-z0-9]+)*$"
+              message: "只能使用小写英文、数字和短横线"
           - name: category
             label: 类型
             type: select
@@ -976,6 +1030,7 @@ content:
 - `book` 字段通过 reference 选择书籍，保存值为 book slug。
 - 封面图写入 `/covers/...`，章节插图写入 `/images/chapters/...`。
 - 不要让 Pages CMS 管理 `src/pages`、`src/components` 等代码文件。
+- 上面的配置把业务 collection 放在 `creation` group 下，方便侧栏分组。Pages CMS 官方说明 `group` 只负责组织菜单，不改变内容存储；如果实际接入时发现 reference 字段无法解析嵌套 group 内的 `books`，就把 `books`、`chapters`、`releases`、`prompts` 四个 collection 提升到 `content` 顶层，字段配置保持不变。
 
 ## 十、页面设计
 
@@ -1053,17 +1108,12 @@ content:
 正文区域建议：
 
 ```html
-<article
-  class="reader-content"
-  data-pagefind-body
-  data-pagefind-filter="book:三国演义：星火纪元"
-  data-pagefind-meta="type:chapter"
->
+<article class="reader-content" data-pagefind-body>
   ...
 </article>
 ```
 
-如果 Pagefind 过滤配置实现复杂，首版可以只做全文搜索，后续再加 filter。
+首版只要求 `data-pagefind-body`，让 Pagefind 索引正文阅读区。后续如果要做按书籍、类型过滤，再补 `data-pagefind-filter` 和 `data-pagefind-meta`，不要在第一版同时把搜索 UI 做复杂。
 
 ### 10.5 搜索页 `/search/`
 
@@ -1089,16 +1139,20 @@ content:
 
 可按书籍过滤。每条版本说明链接到对应 Git tag 时，如果没有 tag，也不要报错。
 
-### 10.8 提示词页 `/prompts/`
+### 10.8 提示词内容
 
-这个页面可以有两种策略：
+首版默认不实现公开 `/prompts/` 页面。提示词是作者侧创作资产，保存在 `src/content/prompts/`，用于：
 
-| 策略 | 说明 |
-|------|------|
-| 不公开 | prompts 只作为作者侧内容，页面不实现 |
-| 公开 | 展示创作方法和提示词模板，作为内容透明度页面 |
+- Pages CMS 中维护常用改写模板。
+- 章节 frontmatter 的 `ai.prompt` 记录使用过的 prompt slug。
+- 后续复盘创作流程。
 
-建议首版实现页面，但只展示 `status === "active"` 的提示词。若不想公开，就不要在导航里放入口。
+如果未来决定公开提示词，需要同时处理：
+
+- 新增 `/prompts/` 路由和导航入口。
+- 只展示 `status === "active"` 的内容。
+- 决定是否加入 sitemap 和 Pagefind。
+- 如果只给读者看创作方法摘要，不想被搜索引擎索引，应给页面加 `noindex`。
 
 ### 10.9 关于页 `/about/`
 
@@ -1270,6 +1324,21 @@ mixtxt.reader.width
 
 首版可以直接使用 Pagefind UI；如果 UI 风格不合适，再封装自定义组件。
 
+首版默认 UI 可以这样接入：
+
+```astro
+---
+---
+
+<link href="/pagefind/pagefind-component-ui.css" rel="stylesheet" />
+<script src="/pagefind/pagefind-component-ui.js" type="module"></script>
+
+<pagefind-modal-trigger></pagefind-modal-trigger>
+<pagefind-modal></pagefind-modal>
+```
+
+`/pagefind/...` 文件只会在 `pagefind --site dist` 之后生成；本地 `astro dev` 阶段看不到完整搜索结果是正常现象。
+
 ## 十三、样式与阅读体验
 
 阅读体验优先级高于视觉装饰。
@@ -1328,11 +1397,14 @@ mixtxt.reader.width
 
 ### 14.1 构建命令
 
+构建脚本必须先校验内容，再构建 Astro，最后运行 Pagefind：
+
 ```json
 {
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build && pagefind --site dist",
+    "validate:content": "node scripts/validate-content.mjs",
+    "build": "npm run validate:content && astro build && pagefind --site dist",
     "preview": "astro preview"
   }
 }
@@ -1347,6 +1419,8 @@ mixtxt.reader.width
 - 不要在页面里渲染草稿内容后再用 CSS 隐藏。
 - 不要让 hidden 书籍参与路由。
 - 不要把 private draft 放入 public 静态目录。
+- 首版在章节正文 `<article>` 上添加 `data-pagefind-body`。一旦站内使用了这个属性，其他想进入搜索的页面也要显式添加，否则 Pagefind 不会索引它们。
+- 首页、书籍页、版本页是否进入搜索要单独决定；不要默认把导航、页脚和管理说明一起索引。
 
 ### 14.3 搜索结果体验
 
@@ -1355,7 +1429,7 @@ mixtxt.reader.width
 - 标题。
 - 摘要片段。
 - 所属书籍。
-- 类型：书籍 / 章节 / 版本说明 / 提示词。
+- 类型：书籍 / 章节 / 版本说明。
 
 如果 Pagefind 默认 UI 难以满足这些字段，首版可以先使用默认 UI，第二版再接自定义结果组件。
 
@@ -1431,6 +1505,7 @@ Framework preset: Astro
 Build command: npm run build
 Build output directory: dist
 Root directory: /
+Environment variables: NODE_VERSION 使用当前 Node.js LTS
 ```
 
 如果使用 pnpm：
@@ -1442,7 +1517,7 @@ Build output directory: dist
 
 ### 16.2 构建频率
 
-你现有 Cloudflare Pages 项目每月约 300 次 build。Cloudflare Pages Free plan 当前每月 500 次 build，且免费层同一时间 1 个构建任务。
+你现有 Cloudflare Pages 项目每月约 300 次 build。截至 2026-06-03，Cloudflare Pages Free plan 每月 500 次 build，且免费层同一时间 1 个构建任务。实务上应按账号维度管理总构建量，不要假定每个 Pages 项目都有独立 500 次额度。
 
 小说站建议：
 
@@ -1453,7 +1528,7 @@ Build output directory: dist
 
 ### 16.3 文件数量
 
-Cloudflare Pages Free plan 单站最多 20,000 个文件。小说站通常不会马上触碰这个限制。
+截至 2026-06-03，Cloudflare Pages Free plan 单站最多 20,000 个文件，单文件最大 25 MiB。小说站通常不会马上触碰这些限制。
 
 估算：
 
@@ -1477,10 +1552,16 @@ Cloudflare Pages Free plan 单站最多 20,000 个文件。小说站通常不会
 /*
   Cache-Control: public, max-age=3600
 
-/assets/*
+/_astro/*
   Cache-Control: public, max-age=31536000, immutable
 
-/_pagefind/*
+/covers/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/images/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/pagefind/*
   Cache-Control: public, max-age=31536000, immutable
 ```
 
@@ -1559,13 +1640,14 @@ git push origin main --tags
 必须验证：
 
 - `npm run build` 成功。
+- `site.json` 必须包含 title、description、author、defaultLanguage、baseUrl。
 - 没有重复 book slug。
 - 同一本书内没有重复 chapter slug。
 - 同一本书内没有重复 chapterNo。
 - published 章节所属 book 必须存在。
 - public book 的 `copyrightStatus` 不能是 `unknown`。
 
-建议写一个脚本：
+必须提供一个内容校验脚本：
 
 ```text
 scripts/validate-content.mjs
@@ -1581,6 +1663,144 @@ scripts/validate-content.mjs
   }
 }
 ```
+
+`scripts/validate-content.mjs` 应实现以下规则。脚本可以直接读文件，不依赖 Astro 运行时：
+
+```js
+import { access, readdir, readFile } from "node:fs/promises";
+import path from "node:path";
+import matter from "gray-matter";
+
+const root = process.cwd();
+const contentDir = path.join(root, "src/content");
+const errors = [];
+
+function fail(message) {
+  errors.push(message);
+}
+
+async function exists(file) {
+  try {
+    await access(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readJsonDir(dir) {
+  const fullDir = path.join(contentDir, dir);
+  const files = (await readdir(fullDir)).filter((file) => file.endsWith(".json"));
+  return Promise.all(
+    files.map(async (file) => ({
+      file,
+      path: path.join(fullDir, file),
+      data: JSON.parse(await readFile(path.join(fullDir, file), "utf8")),
+    }))
+  );
+}
+
+async function readJsonFile(file) {
+  const fullPath = path.join(contentDir, file);
+  return JSON.parse(await readFile(fullPath, "utf8"));
+}
+
+async function readMarkdownDir(dir) {
+  const fullDir = path.join(contentDir, dir);
+  const files = (await readdir(fullDir)).filter((file) => file.endsWith(".md"));
+  return Promise.all(
+    files.map(async (file) => {
+      const raw = await readFile(path.join(fullDir, file), "utf8");
+      const parsed = matter(raw);
+      return { file, path: path.join(fullDir, file), data: parsed.data, body: parsed.content };
+    })
+  );
+}
+
+const books = await readJsonDir("books");
+const chapters = await readMarkdownDir("chapters");
+const releases = await readMarkdownDir("releases");
+const prompts = await readMarkdownDir("prompts");
+
+const site = await readJsonFile("site.json");
+for (const key of ["title", "description", "author", "defaultLanguage", "baseUrl"]) {
+  if (!site[key]) fail(`site.json: 缺少 ${key}`);
+}
+try {
+  new URL(site.baseUrl);
+} catch {
+  fail("site.json: baseUrl 必须是完整 URL");
+}
+
+const bookBySlug = new Map();
+for (const book of books) {
+  const slug = book.data.slug;
+  if (!slug) fail(`${book.file}: 缺少 slug`);
+  if (bookBySlug.has(slug)) fail(`重复 book slug: ${slug}`);
+  bookBySlug.set(slug, book);
+
+  if (book.file !== `${slug}.json`) {
+    fail(`${book.file}: 文件名必须是 ${slug}.json`);
+  }
+
+  if (book.data.visibility === "public" && ["unknown", "private-draft"].includes(book.data.copyrightStatus)) {
+    fail(`${book.file}: public book 不能使用 copyrightStatus=${book.data.copyrightStatus}`);
+  }
+
+  if (book.data.cover) {
+    const coverPath = path.join(root, "public", book.data.cover.replace(/^\//, ""));
+    if (!(await exists(coverPath))) fail(`${book.file}: cover 文件不存在: ${book.data.cover}`);
+  }
+}
+
+const chapterSlugSet = new Set();
+const chapterNoSet = new Set();
+const chapterOrderSet = new Set();
+for (const chapter of chapters) {
+  const { book, chapterNo, order, slug, status } = chapter.data;
+  if (!bookBySlug.has(book)) fail(`${chapter.file}: book 不存在: ${book}`);
+
+  const expected = `${book}-${chapterNo}-${slug}.md`;
+  if (chapter.file !== expected) fail(`${chapter.file}: 文件名必须是 ${expected}`);
+
+  const slugKey = `${book}:${slug}`;
+  const noKey = `${book}:${chapterNo}`;
+  const orderKey = `${book}:${order}`;
+  if (chapterSlugSet.has(slugKey)) fail(`重复 chapter slug: ${slugKey}`);
+  if (chapterNoSet.has(noKey)) fail(`重复 chapterNo: ${noKey}`);
+  if (chapterOrderSet.has(orderKey)) fail(`重复 chapter order: ${orderKey}`);
+  chapterSlugSet.add(slugKey);
+  chapterNoSet.add(noKey);
+  chapterOrderSet.add(orderKey);
+
+  const parentBook = bookBySlug.get(book);
+  if (status === "published") {
+    if (parentBook?.data.visibility !== "public") fail(`${chapter.file}: published 章节所属书籍不是 public`);
+    if (["unknown", "private-draft"].includes(parentBook?.data.copyrightStatus)) {
+      fail(`${chapter.file}: published 章节所属书籍版权状态不可公开`);
+    }
+  }
+}
+
+for (const release of releases) {
+  if (!bookBySlug.has(release.data.book)) fail(`${release.file}: release book 不存在: ${release.data.book}`);
+}
+
+const promptSlugs = new Set();
+for (const prompt of prompts) {
+  if (promptSlugs.has(prompt.data.slug)) fail(`重复 prompt slug: ${prompt.data.slug}`);
+  promptSlugs.add(prompt.data.slug);
+}
+
+if (errors.length > 0) {
+  console.error(errors.map((error) => `- ${error}`).join("\n"));
+  process.exit(1);
+}
+
+console.log("content validation passed");
+```
+
+这段脚本是实现参考，不要求逐字照抄，但最终项目必须覆盖同等规则。不要用正则手写 frontmatter 解析；Markdown frontmatter 统一交给 `gray-matter`。
 
 ### 19.2 页面验收
 
@@ -1631,7 +1851,7 @@ scripts/validate-content.mjs
 ### Phase 1：内容模型和路由
 
 1. 编写 `src/content.config.ts`。
-2. 创建 site、books、chapters、releases、prompts 示例。
+2. 创建 `site.json`、books、chapters、releases、prompts 示例。
 3. 编写 `src/lib/content.ts`。
 4. 实现首页、书籍页、章节页。
 
@@ -1752,6 +1972,8 @@ scripts/validate-content.mjs
 - [Astro Pages CMS Guide](https://docs.astro.build/en/guides/cms/pages-cms/)：确认 Pages CMS 可用于管理 Astro 项目的 Git-based 内容。
 - [Astro Content Collections](https://docs.astro.build/en/guides/content-collections/)：确认 Astro 可用 collection 和 schema 管理内容。
 - [Astro Pages](https://docs.astro.build/en/basics/astro-pages/)：确认 Astro 的文件路由和动态路由能力。
-- [Pagefind Running Pagefind](https://pagefind.app/docs/running-pagefind/)：确认 Pagefind 在静态站生成后扫描 HTML 并生成搜索索引。
+- [Pagefind Getting Started](https://pagefind.app/docs/)：确认 Pagefind 在静态站生成后扫描 HTML 并生成搜索索引，且提供默认搜索 UI。
+- [Pagefind Indexing](https://pagefind.app/docs/indexing/)：确认可用 `data-pagefind-body` 控制哪些 HTML 区域进入索引。
+- [Pagefind Metadata](https://pagefind.app/docs/metadata/)：确认后续可用 `data-pagefind-meta` 给搜索结果补元数据。
 - [Cloudflare Pages Astro Guide](https://developers.cloudflare.com/pages/framework-guides/deploy-an-astro-site/)：确认 Astro 部署到 Cloudflare Pages 的构建配置。
 - [Cloudflare Pages Limits](https://developers.cloudflare.com/pages/platform/limits/)：确认免费层 build 次数、文件数量和单文件大小限制。
