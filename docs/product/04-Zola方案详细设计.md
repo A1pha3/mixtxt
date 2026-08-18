@@ -10,7 +10,13 @@
 >
 > 原始需求：[AI改编小说网需求.md](./archive/AI改编小说网需求.md)
 >
-> 文档版本：1.0 ｜ 创建：2026-08-17 ｜ 最后更新：2026-08-17
+> 文档版本：1.3 ｜ 创建：2026-08-17 ｜ 最后更新：2026-08-18
+>
+> 1.3 变更（对抗性审查第 5 轮）：**构建入口收敛为 `scripts/build.sh`（校验+构建+索引唯一入口），修复 Cloudflare Pages 构建命令漏跑校验脚本的门禁缺口**；Actions 改调 build.sh 且 `zola check --skip-external-links`（修复与 §2.13 的自相矛盾）；删 `extra.wordCount`（Zola 原生 `page.word_count` 已按字符计，免手工维护）；og:image 对无封面书防御；CSS 加 `cachebust`；补"继续阅读"进度记忆与"本地 serve 无搜索索引"说明；validate 加 createdAt≤updatedAt。
+>
+> 1.2 变更（对抗性审查第 4 轮）：chapter 导航加 `data-pagefind-ignore`（防搜索索引污染）；删误导性 `in_search_index`；base.html 补 canonical/OG（对齐 doc 03 §2.11 SEO 要求）；Pagefind 固定 `@1.5.2` 并补充 Python/PyPI 免 Node 跑法与"中文必须 extended 版"；validate 校验 `extra.book` 与目录一致；harness 加 API Key 缺失报错、429/5xx 重试、缺省读真实书名、desc 去 Markdown 标记；补 taxonomy 简版模板；§2.1/§2.15 过时表述修正。
+>
+> 1.1 变更（对抗性审查第 3 轮）：中文搜索改 Pagefind（内置 Elasticlunr 对中文不可用）；`hidden` 书=书 section `draft=true`；prompts 移出 `content/`；删 `[extra.seo]` 死数据；validate 增加 文件名/weight/chapterNo 一致性、日期格式、hidden 联动门禁；harness 生成前版权 fail-fast、date 改无引号 TOML datetime；`ZOLA_VERSION` 0.23.2→0.23.3；注明 `zola check` 默认检查外部链接。
 
 ---
 
@@ -29,6 +35,7 @@ Zola 用「书 = section（目录 + `_index.md`）、章节 = page（`.md` 文�
 | releases（MD） | `content/releases/` section | 同结构 |
 | prompts（MD，作者侧） | **仓库根 `prompts/`（在 `content/` 之外）** | 不是站点内容，不进构建/导航/搜索；AI 工作流直接读文件（见 §2.4/§2.13） |
 | `seo`（共享模型可选字段） | **不逐章存储，由模板推导** | title/description block 已在 base.html/chapter.html 实现；存了反而造成"改 title 忘改 seo.title"的漂移 |
+| chapters `wordCount` | **不存储，用 Zola 原生 `page.word_count`** | zh/ja 按字符计（`page.reading_time` 同是内建），免手工维护、不会随改文过期 |
 | site 配置（JSON） | `config.toml` + `config.extra` | 全站标题/描述/作者/GitHub 链接 |
 
 **导航铁律不变**：章节导航不跨书，按 `weight` 升序算上一篇/下一篇（见 §2.8）。**草稿铁律不变**：`draft=true` 不参与 `zola build`、不进搜索索引、不进 sitemap/feed（共享铁律见 doc 03 §1.7，Zola 行为见 §2.8/§2.9）；**hidden 书 = 整本书 `draft=true`**（§2.6/§2.12）。**版权铁律不变**：`extra.copyrightStatus` 为 `unknown`/`private-draft` 的书籍，生产构建必须被校验脚本拦截（见 §2.12）。
@@ -40,7 +47,7 @@ Zola 用「书 = section（目录 + `_index.md`）、章节 = page（`.md` 文�
 ### 2.1 结论与设计边界
 
 ```text
-Zola + GitHub + Cloudflare Pages（单文件二进制、零依赖、Tera 模板、内置搜索索引）
+Zola + GitHub + Cloudflare Pages（单文件二进制、零依赖、Tera 模板、Pagefind 搜索索引）
 ```
 
 保留的条件与共享模型一致：正文仍是 Markdown 文件、不需要数据库、只有你一个创建者、读者只读、Git 保存版本、Cloudflare Pages 自动构建发布。
@@ -59,15 +66,15 @@ Zola + GitHub + Cloudflare Pages（单文件二进制、零依赖、Tera 模板�
 flowchart LR
     A["AI 生成草稿（.md + TOML frontmatter）"] --> B["作者修订 / zola serve --drafts 预览"]
     B --> C["Git commit & push"]
-    C --> D["Cloudflare Pages 触发 zola build"]
-    D --> E["校验脚本门控（版权/一致性/封面）"]
+    C --> D["Cloudflare Pages 触发 scripts/build.sh"]
+    D --> E["build.sh：校验脚本门控（版权/一致性/封面）"]
     E --> F["Zola 生成 HTML"]
     F --> F2["Pagefind 生成搜索索引"]
     F2 --> G["Cloudflare CDN"]
     G --> H["读者阅读网站"]
 ```
 
-**一次章节发布如何流动：** AI 生成草稿（含 `draft=true`）→ 作者本地 `zola serve --drafts` 预览（注意：Zola 的 `build` 与 `serve` 默认都不含草稿，看草稿必须显式 `--drafts`）→ 改 `draft=false` + 提交 Git → push 触发 Cloudflare Pages `zola build` → 校验脚本先跑（失败则中断构建，旧版本仍在线）→ Zola 按 `weight` 排序生成书页/章节页、过滤 `draft=true`、生成 sitemap/feed → `npx pagefind --site public` 生成搜索索引 → CDN 发布。
+**一次章节发布如何流动：** AI 生成草稿（含 `draft=true`）→ 作者本地 `zola serve --drafts` 预览（注意：Zola 的 `build` 与 `serve` 默认都不含草稿，看草稿必须显式 `--drafts`）→ 改 `draft=false` + 提交 Git → push 触发 Cloudflare Pages 构建 → `scripts/build.sh` 先跑校验脚本（失败则中断构建，旧版本仍在线）→ Zola 按 `weight` 排序生成书页/章节页、过滤 `draft=true`、生成 sitemap/feed → `npx pagefind@1.5.2 --site public` 生成搜索索引 → CDN 发布。
 
 > 注：上方 Mermaid 图需支持 Mermaid 的渲染器（GitHub、部分 IDE 插件）；纯 Markdown 阅读器会显示源码，不影响其余内容。
 
@@ -78,7 +85,7 @@ flowchart LR
 模板:         Tera（Jinja2 风格）
 内容格式:     Markdown + TOML frontmatter（+++ 包裹）
 样式:         原生 Sass（Zola 内置编译）
-站内搜索:     Pagefind（构建后扫描 public/，v1.5+ 原生中文分词；见 §2.9）
+站内搜索:     Pagefind（构建后扫描 public/，固定 1.5.2，中文站必须 extended 版；见 §2.9）
 版本管理:     Git + GitHub
 部署平台:     Cloudflare Pages（原生支持，构建命令 zola build）
 校验:         Python + tomllib（无第三方依赖，见 §2.12）
@@ -92,7 +99,11 @@ brew install zola                 # macOS
 zola --version
 ```
 
-> **搜索依赖取舍**：Pagefind 需要 Node（`npx pagefind`，Cloudflare Pages 构建环境自带 Node）或下载其预编译二进制。想保持"纯零 Node"也可用 Zola 内置 Elasticlunr——但**它对中文分词不可用**（见 §2.9）。中文小说站建议接受 Pagefind 这一个依赖。
+> **搜索依赖取舍**：Pagefind 有三种等价跑法，选一种并固定版本——
+> ① `npx pagefind@1.5.2 --site public`：npx **自动使用支持中/日文的 `pagefind_extended` 版**，Cloudflare 构建环境自带 Node；
+> ② 零 Node：`python3 -m pip install 'pagefind[extended]==1.5.2'` 后 `python3 -m pagefind --site public`（官方 PyPI 包装，同样 extended 版，与本方案 Python 校验脚本同生态）；
+> ③ 下载 GitHub 预编译二进制：**必须选 `pagefind_extended`，标准版不支持中文索引**。
+> 想彻底零外部依赖也可用 Zola 内置 Elasticlunr——但**它对中文分词不可用**（见 §2.9）。中文小说站建议接受 Pagefind 这一个依赖。
 
 ### 2.4 仓库结构
 
@@ -124,6 +135,8 @@ mixtxt-zola/
 │   ├── releases.html             # 版本说明
 │   ├── search.html               # 搜索
 │   ├── page.html                 # 通用单页（about 等）
+│   ├── taxonomy_list.html        # 标签总览页（见 §2.7；不提供则 Zola 默认裸页面无站点样式）
+│   ├── taxonomy_single.html      # 单个标签页（同上）
 │   └── 404.html                  # 404（Zola 模板级支持，不写则用默认）
 ├── sass/
 │   └── main.scss                 # 编译到 public/main.css
@@ -158,7 +171,7 @@ build_search_index = false   # 搜索用 Pagefind（构建后生成索引）；�
 generate_feeds = true        # 自动 RSS/Atom（需页面有 date）
 minify_html = true           # 压缩 HTML（可选，按需开启）
 
-# 分类法：书籍/章节都可打 tags（自动生成 /tags/ 页，可自建 taxonomy_list/taxonomy_single 模板覆盖）
+# 分类法：书籍/章节都可打 tags（自动生成 /tags/ 页，模板见 §2.7；若首版不做标签页，删掉本节并清掉章节示例的 [taxonomies]）
 taxonomies = [
   { name = "tags", feed = true },
 ]
@@ -210,13 +223,13 @@ description = "巨鹿星区的张角点燃第一枚信标，旧帝国的边境�
 weight = 2                  # 排序用；与 extra.chapterNo、文件名数字前缀三处一致（validate 强制）
 draft = false               # false = 已发布；true = 草稿/未发布
 date = 2026-06-03T10:00:00+08:00
-in_search_index = true      # 章节进 Pagefind 索引（默认 true，显式声明更清晰）
+# 不写 in_search_index：那是 Zola 内置搜索（build_search_index）的开关；本方案搜索由
+# Pagefind 的 data-pagefind-body 控制（§2.7），写它只会误导
 [taxonomies]
 tags = ["三国", "科幻", "AI改编"]
 [extra]
 book = "sanguo-scifi"       # 冗余校验用，实际归属由目录决定
 chapterNo = "002"           # 显示用章号（三位，与前导零一致）
-wordCount = 3200
 createdAt = "2026-06-03"
 updatedAt = "2026-06-03"
 [extra.ai]
@@ -226,7 +239,7 @@ humanEdited = true
 +++
 ```
 
-> 正文在 `+++` 之后的 Markdown 中书写。Zola 只识别固定顶层键（`title`/`description`/`date`/`weight`/`draft`/`slug`/`template`/`sort_by`/`in_search_index`/`taxonomies`/`extra` 等）；`status`/`visibility`/`cover`/`copyrightStatus`/`wordCount`/`ai` 等自定义字段必须放 `[extra]`，模板里用 `page.extra.xxx` 访问。
+> 正文在 `+++` 之后的 Markdown 中书写。Zola 只识别固定顶层键（`title`/`description`/`date`/`weight`/`draft`/`slug`/`template`/`sort_by`/`in_search_index`/`taxonomies`/`extra` 等）；`status`/`visibility`/`cover`/`copyrightStatus`/`ai` 等自定义字段必须放 `[extra]`，模板里用 `page.extra.xxx` 访问。**字数/阅读时长不用存**——Zola 原生提供 `page.word_count`（zh/ja 按字符计）与 `page.reading_time`。
 >
 > **不存 `[extra.seo]`**：页面 title/description 已由 base.html/chapter.html 的 block 推导（`{chapterNo} {title} - {book} - {site}`），逐章存 seo 是死数据且会漂移（改了 title 忘改 seo.title）。共享模型的 `seo` 是可选字段，Zola 用模板推导即等价实现。
 
@@ -265,7 +278,13 @@ prompts/rewrite-style-guide.md    # 纯 Markdown 文本即可，无 frontmatter 
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ config.title }}{% endblock %}</title>
   <meta name="description" content="{% block description %}{{ config.description }}{% endblock %}">
-  <link rel="stylesheet" href="{{ get_url(path='main.css') }}">
+  <link rel="canonical" href="{{ current_url }}">
+  <meta property="og:title" content="{% block title %}{{ config.title }}{% endblock %}">
+  <meta property="og:description" content="{% block description %}{{ config.description }}{% endblock %}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ current_url }}">
+  <meta property="og:image" content="{% block ogimage %}{{ get_url(path='favicon.svg') }}{% endblock %}">
+  <link rel="stylesheet" href="{{ get_url(path='main.css', cachebust=true) }}">
 </head>
 <body>
   <header class="site-header">
@@ -312,6 +331,7 @@ prompts/rewrite-style-guide.md    # 纯 Markdown 文本即可，无 frontmatter 
 {% extends "base.html" %}
 {% block title %}{{ section.title }} - {{ config.title }}{% endblock %}
 {% block description %}{{ section.description }}{% endblock %}
+{% block ogimage %}{% if section.extra.cover %}{{ get_url(path=section.extra.cover) }}{% else %}{{ get_url(path='favicon.svg') }}{% endif %}{% endblock %}
 {% block content %}
 <article class="book">
   <header>
@@ -339,11 +359,12 @@ prompts/rewrite-style-guide.md    # 纯 Markdown 文本即可，无 frontmatter 
 {% extends "base.html" %}
 {% block title %}{{ page.extra.chapterNo }} {{ page.title }} - {{ section.title }} - {{ config.title }}{% endblock %}
 {% block description %}{{ page.description }}{% endblock %}
+{% block ogimage %}{% if section.extra.cover %}{{ get_url(path=section.extra.cover) }}{% else %}{{ get_url(path='favicon.svg') }}{% endif %}{% endblock %}
 {% block content %}
 <article class="chapter" data-pagefind-body>
   <header><h1>{{ page.extra.chapterNo }} {{ page.title }}</h1></header>
   {{ page.content | safe }}
-  <nav class="chapter-nav">
+  <nav class="chapter-nav" data-pagefind-ignore>
     {% if page.lower %}<a href="{{ page.lower.permalink }}">← 上一章</a>{% endif %}
     <a href="{{ section.permalink }}">目录</a>
     {% if page.higher %}<a href="{{ page.higher.permalink }}">下一章 →</a>{% endif %}
@@ -352,7 +373,23 @@ prompts/rewrite-style-guide.md    # 纯 Markdown 文本即可，无 frontmatter 
 {% endblock %}
 ```
 
-> `data-pagefind-body`：Pagefind（§2.9）只索引显式标记的元素——章节正文才进搜索索引，导航/页脚/首页不索引。这是主搜索方案的必需标记，不是预留。
+> `data-pagefind-body`：Pagefind（§2.9）只索引显式标记的元素——章节正文才进搜索索引；`data-pagefind-ignore` 排除导航等噪音（不加的话"上一章/下一章/目录"会被索引，搜"目录"会命中所有章节）。这是主搜索方案的必需标记，不是预留。
+
+**taxonomy_list.html / taxonomy_single.html（标签页，简版）**
+
+```html
+{% extends "base.html" %}
+{% block content %}
+<h1>标签：{{ term.name }}</h1>
+<ul>
+{% for page in term.pages %}
+  <li><a href="{{ page.permalink }}">{{ page.title }}</a></li>
+{% endfor %}
+</ul>
+{% endblock %}
+```
+
+> 上面是 `taxonomy_single.html`（单个标签页，`term.pages` 即该标签下页面）；`taxonomy_list.html`（/tags/ 总览）写法相同，把 `term.name` 换成遍历 `{% for term in terms %}`。**不提供这两个模板时，Zola 用内置默认渲染标签页——是脱离全站样式的裸页面**。若首版不做标签页，删掉 config 的 `taxonomies` 与章节示例的 `[taxonomies]` 即可，模板也不需要。
 
 ### 2.8 章节导航 prev/next（不跨书）
 
@@ -375,13 +412,14 @@ Zola 里章节是 book section 的子页面，排序由 `_index.md` 的 `sort_by
 
 ```bash
 zola build                          # 先生成 HTML
-npx pagefind --site public          # 再扫描 public/ 生成 public/pagefind/ 索引
+npx pagefind@1.5.2 --site public    # 再扫描 public/ 生成 public/pagefind/ 索引（固定版本；或 python3 -m pagefind，见 §2.3）
 ```
 
-- 索引范围由 `data-pagefind-body` 决定（§2.7 章节正文已标记；`data-pagefind-ignore` 可排除特定元素）。
+- 索引范围由 `data-pagefind-body` 决定（§2.7 章节正文已标记；`data-pagefind-ignore` 排除导航等噪音）。
 - **草稿天然不进索引**：`draft=true` 不参与构建，Pagefind 只扫构建产物，与共享草稿铁律一致。
 - `pagefind/` 产物生成在 `public/` 下，**不入库**（.gitignore 忽略整个 public/）。
-- **依赖取舍**：Pagefind 需要 Node（`npx`）或预编译二进制；Cloudflare Pages 构建环境自带 Node，本地装 Node 或下载二进制均可。这是 Zola 方案唯一引入的外部搜索依赖——换取中文可用的全文搜索，值得。
+- **依赖取舍**：见 §2.3——npx（Node）或 PyPI（Python）包装都自动用支持中文的 `pagefind_extended` 版；下载二进制必须选 extended 版。这是 Zola 方案唯一引入的外部搜索依赖——换取中文可用的全文搜索，值得。
+- **本地 `zola serve` 不生成搜索索引**（pagefind 是构建后步骤）：调试搜索需 `zola build` + pagefind 后直接预览 `public/`。
 
 **搜索页 `content/search.md`（`template = "search.html"`）**，用 Pagefind 官方 JS API 手写一个最小实现（`textContent` 渲染天然防 XSS）：
 
@@ -392,20 +430,34 @@ npx pagefind --site public          # 再扫描 public/ 生成 public/pagefind/ 
 <input id="q" type="search" placeholder="搜索章节标题或正文…" oninput="doSearch(this.value)">
 <ul id="results"></ul>
 <script>
+let pagefindPromise;
+function getPagefind() {
+  pagefindPromise ||= import("/pagefind/pagefind.js");   // 实例只加载一次
+  return pagefindPromise;
+}
+let seq = 0;
 async function doSearch(term) {
   const box = document.getElementById("results");
   term = term.trim();
   if (!term) { box.innerHTML = ""; return; }
-  const pagefind = await import("/pagefind/pagefind.js");
+  const my = ++seq;                        // 竞态守卫：只渲染最后一次输入的结果
+  const pagefind = await getPagefind();
   const { results } = await pagefind.search(term);
+  if (my !== seq) return;
   box.innerHTML = "";
   for (const r of results.slice(0, 20)) {
     const data = await r.data();
     const li = document.createElement("li");
     const a = document.createElement("a");
     a.href = data.url;
-    a.textContent = data.meta.title;   // textContent 而非 innerHTML：防注入
+    a.textContent = data.meta.title;       // textContent 而非 innerHTML：防注入
     li.append(a);
+    const tmp = document.createElement("div");
+    tmp.innerHTML = data.content;          // 只取纯文本作摘要，不把 HTML 注入页面
+    const p = document.createElement("p");
+    p.className = "excerpt";
+    p.textContent = tmp.textContent.slice(0, 80);
+    li.append(p);
     box.append(li);
   }
 }
@@ -442,7 +494,7 @@ async function doSearch(term) {
 .chapter p { font-size: var(--reader-font-size); line-height: var(--reader-line-height); }
 ```
 
-阅读工具栏（字号/行距/主题/宽度）用原生 JS + `localStorage`（同 doc 03 §2.10），`zola build` 产出的纯静态页同样适用。
+阅读工具栏（字号/行距/主题/宽度）用原生 JS + `localStorage`（同 doc 03 §2.10），`zola build` 产出的纯静态页同样适用。**继续阅读进度**（同 doc 03 §2.10）：每本书记录 `localStorage["mixtxt.reader.lastChapter.{bookSlug}"]`，首页/书页显示"继续阅读"入口。
 
 ### 2.11 部署（Cloudflare Pages）
 
@@ -450,17 +502,17 @@ Cloudflare Pages **原生支持 Zola**（v2 构建环境内置 Zola，默认 0.2
 
 ```text
 Framework preset: 无（或 Zola）
-Build command:    if [ "$CF_PAGES_BRANCH" = "main" ]; then zola build && npx pagefind --site public; else zola build --base-url "$CF_PAGES_URL" && npx pagefind --site public; fi
+Build command:    if [ "$CF_PAGES_BRANCH" = "main" ]; then ./scripts/build.sh; else ./scripts/build.sh --base-url "$CF_PAGES_URL"; fi
 Build output:     public
 Root directory:   /
 Environment variables: ZOLA_VERSION = 0.23.3   # 固定版本，避免漂移（2026-08-12 官方稳定版，修复低危安全漏洞）
 ```
 
-- 构建命令用 **Cloudflare 官方推荐的分支判断**：生产分支（main）用 `config.toml` 的 `base_url`；预览分支（PR 预览）用 `CF_PAGES_URL` 动态覆盖，避免预览页资源加载失败。`&&` 串联 `pagefind` 生成搜索索引（构建环境自带 Node）。
+- 构建命令用 **Cloudflare 官方推荐的分支判断**：生产分支（main）用 `config.toml` 的 `base_url`；预览分支（PR 预览）用 `CF_PAGES_URL` 动态覆盖，避免预览页资源加载失败。**分支判断在面板、构建逻辑在 `scripts/build.sh`（§2.12）**——它内部先跑校验脚本再 `zola build "$@"` 再 pagefind，是校验+构建+索引的**唯一入口**，保证生产构建永不漏跑内容门禁（此前直接内联 `zola build` 时校验脚本并不执行，是门禁缺口）。
 - `static/_headers` 缓存策略同 doc 03 §2.12：HTML `max-age=3600`，`/covers/*`、`/images/*`、`/pagefind/*` 等设 `max-age=31536000, immutable`，并加安全响应头。
 - 免费层限制（每项目 500 构建/月、20,000 文件、25 MiB）与构建频率策略同 doc 03 §1.5。
 
-**可选 GitHub Actions 兜底**（本地先构建门控，避免坏构建上线）：
+**可选 GitHub Actions 兜底**（push 前本地构建门控，避免坏构建上线）：
 
 ```yaml
 # .github/workflows/build.yml
@@ -473,10 +525,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@v2
         with: { tool: zola }
-      - run: python3 scripts/validate_content.py
-      - run: zola check
-      - run: zola build
-      - run: npx pagefind --site public
+      - run: zola check --skip-external-links   # 内部死链仍查；外部链接检查发 HTTP 请求，CI 网络不稳易红（§2.13），本地全量查
+      - run: ./scripts/build.sh                 # 与 Cloudflare Pages 同一入口：validate + build + pagefind
       - uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
@@ -569,6 +619,9 @@ for book_dir in books.values():
         no_ok = bool(no) and bool(chapterNo_re.fullmatch(no))
         if not no_ok:
             errors.append(f"{ch}: chapterNo 必须为至少三位数字 {no!r}")
+        # extra.book 必须与所在目录一致（防章节被复制到别的书时归属错乱）
+        if extra.get("book") != book_dir.name:
+            errors.append(f"{ch}: extra.book={extra.get('book')!r} 与所在目录 {book_dir.name} 不一致")
         if not isinstance(weight, int):
             errors.append(f"{ch}: 缺少 weight 或非整数（排序必需，须与 chapterNo 一致）")
         elif no_ok:
@@ -581,6 +634,10 @@ for book_dir in books.values():
         # 日期（feed/sitemap 需要）
         if "date" in fm:
             check_date(ch, fm["date"])
+        # createdAt 不晚于 updatedAt（共享模型 doc 03 §2.14；YYYY-MM-DD 字典序即时间序）
+        ca, ua = extra.get("createdAt"), extra.get("updatedAt")
+        if ca and ua and ca > ua:
+            errors.append(f"{ch}: createdAt({ca}) 晚于 updatedAt({ua})")
         # 已发布章节（draft=false 或缺省）必须挂在可公开的书下；草稿（draft=true）不受此限
         is_published = (fm.get("draft", False) is False)
         if is_published and cr in ("unknown", "private-draft"):
@@ -593,17 +650,17 @@ if errors:
 print("content validation passed")
 ```
 
-`scripts/build.sh` 串联校验、构建与搜索索引：
+`scripts/build.sh` 是校验+构建+索引的**唯一构建入口**（Cloudflare Pages 与 GitHub Actions 都调用它，保证门禁永不缺席），透传 `zola build` 参数：
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 python3 scripts/validate_content.py   # 失败则中断，旧版本保持在线
-zola build
-npx pagefind --site public            # 生成搜索索引（需 Node；或换成 pagefind 二进制）
+zola build "$@"                       # 透传参数，如 --base-url "$CF_PAGES_URL"
+npx pagefind@1.5.2 --site public      # 生成搜索索引（固定版本；零 Node 则用 python3 -m pagefind，见 §2.3）
 ```
 
-> 实际覆盖清单（与脚本逐条对应）：frontmatter 闭合与 TOML 合法、文件名 `{三位以上数字}(-slug)?.md`、slug 合法、无重复 chapterNo、**文件名前缀/weight/chapterNo 三者一致**、hidden 书必须设 section `draft=true`、copyrightStatus/visibility 约束、封面存在、date 格式（TOML datetime 或字符串）。共享模型里 releases 的 semver、`ai.prompt` 引用等低风险规则首版不在此脚本硬拦（由目录结构与 `zola check` 兜底），需要时再加。AI 实现项目时不要随意改字段名；改了必须同步模板与示例。
+> 实际覆盖清单（与脚本逐条对应）：frontmatter 闭合与 TOML 合法、文件名 `{三位以上数字}(-slug)?.md`、slug 合法、无重复 chapterNo、**文件名前缀/weight/chapterNo 三者一致**、`extra.book` 与目录一致、hidden 书必须设 section `draft=true`、copyrightStatus/visibility 约束、封面存在、date 格式（TOML datetime 或字符串）、createdAt≤updatedAt。共享模型里 releases 的 semver、`ai.prompt` 引用等低风险规则首版不在此脚本硬拦（由目录结构与 `zola check` 兜底），需要时再加。AI 实现项目时不要随意改字段名；改了必须同步模板与示例。
 
 ### 2.13 AI 创作工作流（Zola 适配）
 
@@ -635,7 +692,7 @@ git tag v0.2.0 && git push origin v0.2.0
 - **Phase 1 内容结构与路由**：书 section + 章节 page、`book.html`/`chapter.html`、首页书籍列表、上下篇导航。验收：公开内容显示、草稿不显示、上/下一篇正确。
 - **Phase 2 校验与质量**：`validate_content.py`、`zola check`、版权门控。验收：坏内容被拦截、死链被报出。
 - **Phase 3 阅读体验**：Sass 变量、暗色/字号/行距/宽度、`localStorage`、移动端适配。
-- **Phase 4 搜索与 SEO**：内置搜索页、RSS/feed、sitemap、meta/OG。
+- **Phase 4 搜索与 SEO**：Pagefind 搜索页、RSS/feed、sitemap、canonical/OG meta。
 - **Phase 5 部署**：连 Cloudflare Pages、固定 `ZOLA_VERSION`、自定义域名、缓存头、构建次数监控。
 
 ### 2.16 风险与应对
@@ -652,7 +709,9 @@ git tag v0.2.0 && git push origin v0.2.0
 | Cloudflare 构建次数不够 | 本地预览后集中 push，控制频率（同 §1.5） |
 | 文件数超限 | 控制历史版本页数量，必要时拆站 |
 | 原作版权不清 | `unknown` 不允许公开构建 |
-| 版本漂移 | 固定 `ZOLA_VERSION`，升级前本地 `zola build` |
+| 版本漂移 | 固定 `ZOLA_VERSION` 与 `pagefind@1.5.2`，升级前本地 `zola build` |
+| 搜索用错标准版二进制 | 中文索引必须用 `pagefind_extended`（npx / PyPI 包装默认即 extended，见 §2.3） |
+| 搜索索引含导航文字 | 章节导航 `data-pagefind-ignore`（否则搜"目录"命中所有章节，见 §2.7） |
 | 构建失败读者看到旧版 | GitHub Actions 本地构建门控，push 前先跑 build |
 
 ### 2.17 与 Astro + Pages CMS / Hugo 的取舍
@@ -691,7 +750,7 @@ git tag v0.2.0 && git push origin v0.2.0
     --style "节奏明快，每章 3000 字左右"
   # --dry-run：只打印将生成的文件与 frontmatter 模板，不调用 LLM
 """
-import argparse, datetime, json, os, pathlib, re, subprocess, sys, tomllib, urllib.request, urllib.error
+import argparse, datetime, json, os, pathlib, re, subprocess, sys, time, tomllib, urllib.request, urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 ROOT = pathlib.Path(".")
@@ -703,8 +762,11 @@ SYSTEM_PROMPT = """你是小说章节作者。只输出章节正文（Markdown�
 正文不超过 4000 字，结尾留钩子便于下一章衔接。"""
 
 def llm_chat(system: str, user: str) -> str:
+    key = os.environ.get("LLM_API_KEY")
+    if not key:
+        print("缺少 LLM_API_KEY 环境变量（OpenAI 兼容 API 的密钥）")
+        sys.exit(1)
     base = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
-    key = os.environ["LLM_API_KEY"]
     model = os.environ.get("LLM_MODEL", "gpt-4o-mini")
     req = urllib.request.Request(
         f"{base.rstrip('/')}/chat/completions",
@@ -718,33 +780,37 @@ def llm_chat(system: str, user: str) -> str:
         headers={"Content-Type": "application/json",
                  "Authorization": f"Bearer {key}"},
     )
-    try:
-        with urllib.request.urlopen(req, timeout=120) as r:
-            data = json.load(r)
-    except urllib.error.HTTPError as e:
-        print(f"LLM API 错误 {e.code}：{e.read().decode(errors='replace')[:200]}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"LLM 调用失败：{e}")
-        sys.exit(1)
-    return data["choices"][0]["message"]["content"].strip()
+    for attempt in range(3):          # 429/5xx 退避重试，批量生成时抗偶发限流
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                return json.load(r)["choices"][0]["message"]["content"].strip()
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 500, 502, 503) and attempt < 2:
+                time.sleep(2 * (attempt + 1))
+                continue
+            print(f"LLM API 错误 {e.code}：{e.read().decode(errors='replace')[:200]}")
+            sys.exit(1)
+        except Exception as e:
+            print(f"LLM 调用失败：{e}")
+            sys.exit(1)
 
 def toml_str(s: str) -> str:
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') \
                  .replace("\n", "\\n") + '"'
 
-def book_copyright(book_dir: pathlib.Path) -> str:
-    """读书 _index.md 的 extra.copyrightStatus；解析失败按 unknown 处理（拒绝生成）。"""
+def book_meta(book_dir: pathlib.Path) -> tuple:
+    """读书 _index.md 的 (title, extra.copyrightStatus)；解析失败按 ("", "unknown") 处理（拒绝生成）。"""
     m = re.match(r"^\+\+\+\s*\n(.*?)\n\+\+\+",
                  (book_dir / "_index.md").read_text(encoding="utf-8"), re.S)
     if not m:
-        return "unknown"
+        return "", "unknown"
     try:
-        return tomllib.loads(m.group(1)).get("extra", {}).get("copyrightStatus", "unknown")
+        fm = tomllib.loads(m.group(1))
+        return fm.get("title", ""), fm.get("extra", {}).get("copyrightStatus", "unknown")
     except tomllib.TOMLDecodeError:
-        return "unknown"
+        return "", "unknown"
 
-def make_frontmatter(weight: int, title: str, desc: str, body: str,
+def make_frontmatter(weight: int, title: str, desc: str,
                      book: str, now: datetime.datetime) -> str:
     fmt = (
         "+++\n"
@@ -753,13 +819,11 @@ def make_frontmatter(weight: int, title: str, desc: str, body: str,
         "weight = {weight}\n"
         "draft = true\n"
         "date = {date}\n"          # 无引号 TOML datetime（Zola 官方：不要用引号包日期）
-        "in_search_index = true\n"
         "[taxonomies]\n"
         'tags = ["AI改编"]\n'
         "[extra]\n"
         'book = "{book}"\n'
         'chapterNo = "{no:03d}"\n'
-        "wordCount = {words}\n"
         'createdAt = "{ymd}"\n'
         'updatedAt = "{ymd}"\n'
         "[extra.ai]\n"
@@ -771,7 +835,7 @@ def make_frontmatter(weight: int, title: str, desc: str, body: str,
     return fmt.format(
         title=toml_str(title), desc=toml_str(desc),
         weight=weight, date=now.isoformat(timespec="seconds"),
-        book=book, no=weight, words=len(body),
+        book=book, no=weight,
         ymd=now.date().isoformat(),
         model=os.environ.get("LLM_MODEL", "gpt-4o-mini"),
     )
@@ -800,7 +864,7 @@ def main() -> int:
 
     # fail-fast：版权未确认的书直接拒绝——不调用 LLM、不写文件，
     # 避免白花 API 费用后才发现生成的文件注定被 validate_content.py 拦下
-    cr = book_copyright(book_dir)
+    book_title, cr = book_meta(book_dir)
     if cr not in ALLOWED_COPYRIGHT:
         print(f"书 {args.book} 的 copyrightStatus={cr}，不允许 AI 生成（需 public-domain/authorized）")
         return 1
@@ -814,7 +878,7 @@ def main() -> int:
     if args.dry_run:
         for w in range(start, start + args.count):
             print(f"[dry-run] 将生成 {book_dir.name}/{w:03d}.md（draft=true）")
-        print(make_frontmatter(start, "示例章标题", "示例摘要", "正文…",
+        print(make_frontmatter(start, "示例章标题", "示例摘要",
                                args.book, datetime.datetime.now().astimezone()))
         return 0
 
@@ -823,12 +887,13 @@ def main() -> int:
     def gen_one(w: int) -> int:
         body = llm_chat(
             SYSTEM_PROMPT.format(style=args.style),
-            f"这是《{args.title or args.book}》的第 {w} 章，请写正文。",
+            f"这是《{args.title or book_title or args.book}》的第 {w} 章，请写正文。",
         )
         title = f"第 {w} 章"          # 人工修订时可改成真实标题
-        desc = (body.split("\n")[0][:60] or f"第 {w} 章")
+        first = re.sub(r"^#+\s*", "", body.split("\n")[0])   # 去掉首行的 Markdown 标题标记
+        desc = (first[:60] or f"第 {w} 章")
         (book_dir / f"{w:03d}.md").write_text(
-            make_frontmatter(w, title, desc, body, args.book, now)
+            make_frontmatter(w, title, desc, args.book, now)
             + "\n" + body, encoding="utf-8")
         return w
 
@@ -848,6 +913,7 @@ if __name__ == "__main__":
 - 书目录 `content/books/<slug>/_index.md` 必须已存在。**脚本生成前先读 `extra.copyrightStatus`**：非 `public-domain`/`authorized` 立即拒绝（fail-fast）——不调 LLM、不写文件，版权门控从"生成后被 validate 拦"提前到"生成前拒绝"。
 - 生成的是 `draft=true` 草稿，不进构建/搜索/导航；作者 `zola serve --drafts` 预览修订后，改 `draft=false` 再 push 发布——**AI 负责生成草稿、人决定发布**的铁律由脚本结构强制保证。
 - `date` 输出为**无引号 TOML datetime**（`2026-06-03T10:00:00+08:00`）——Zola 官方明确不要用引号包日期；这与 §2.6 章节示例一致。
+- 缺 `LLM_API_KEY` 时直接报错退出（不会抛 traceback）；429/5xx 自动退避重试（共 3 次），批量生成抗偶发限流；`--title` 缺省时读 `_index.md` 的真实书名喂给 LLM（而非 slug）。
 - 文件名是 `{weight:03d}.md`（URL 为 `/books/<slug>/<weight>/`）；想要语义化 URL，把文件名改成 `003-huangjin.md` 即可（slug 取自文件名）。validate 强制文件名前缀/weight/chapterNo 三者一致，改名后记得同步 chapterNo 与 weight。
 - `--dry-run` 不调用 LLM、不写文件，用于先看会生成什么。
 - `--parallel N` 并发调用 LLM（默认 4，上百章建议 8-16）——并发下完成顺序不定，但章节号由脚本统一分配，结果一致。
