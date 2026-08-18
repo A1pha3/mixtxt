@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>搜索</h1>
+<input id="q" type="search" placeholder="搜索章节标题或正文…" oninput="doSearch(this.value)">
+<ul id="results"></ul>
+<script>
+let pagefindPromise;
+function getPagefind() {
+  pagefindPromise ||= import("/pagefind/pagefind.js");   // 实例只加载一次
+  return pagefindPromise;
+}
+let seq = 0;
+async function doSearch(term) {
+  const box = document.getElementById("results");
+  term = term.trim();
+  if (!term) { box.innerHTML = ""; return; }
+  const my = ++seq;                        // 竞态守卫：只渲染最后一次输入的结果
+  const pagefind = await getPagefind();
+  const { results } = await pagefind.search(term);
+  if (my !== seq) return;
+  box.innerHTML = "";
+  for (const r of results.slice(0, 20)) {
+    const data = await r.data();
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.href = data.url;
+    a.textContent = data.meta.title;       // textContent 而非 innerHTML：防注入
+    li.append(a);
+    const doc = new DOMParser().parseFromString(data.content, "text/html");
+    const p = document.createElement("p");
+    p.className = "excerpt";
+    p.textContent = doc.body.textContent.slice(0, 80);   // 只取摘要纯文本，不注入 HTML => 防注入
+    li.append(p);
+    box.append(li);
+  }
+}
+</script>
+{% endblock %}
