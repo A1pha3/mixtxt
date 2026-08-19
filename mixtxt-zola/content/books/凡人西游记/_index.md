@@ -4,7 +4,6 @@ description = "以《西游记》之神魔气象为骨架，以《凡人修仙�
 template = "book.html"
 sort_by = "weight"
 draft = false
-date = 2026-08-20T00:18:00+08:00
 [extra]
 original = "西游记 / 凡人修仙传"
 author = "吴承恩 / 忘语"
@@ -15,8 +14,6 @@ cover = "/covers/fanren-xiyou.jpg"
 copyrightStatus = "public-domain"
 startedAt = "2026-08-20"
 updatedAt = "2026-08-20"
-[taxonomies]
-tags = ["西游记", "凡人修仙传", "玄幻", "改编"]
 +++
 
 # 简介
