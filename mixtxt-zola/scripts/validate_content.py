@@ -21,18 +21,18 @@ errors = []
 slug_re = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
-def parse_frontmatter(path: pathlib.Path) -> dict:
-    """读 `+++` 包裹的 TOML frontmatter；缺失或解析失败记入 errors 并返回空 dict。"""
+def parse_frontmatter(path: pathlib.Path) -> tuple[dict, str]:
+    """读 `+++` 包裹的 (frontmatter dict, 正文字符串)；缺失/解析失败记 errors 返回空 dict。"""
     text = path.read_text(encoding="utf-8")
-    m = re.match(r"^\+\+\+\s*\n(.*?)\n\+\+\+", text, re.S)
+    m = re.match(r"^\+\+\+\s*\n(.*?)\n\+\+\+\s*\n?(.*)$", text, re.S)
     if not m:
         errors.append(f"{path}: frontmatter 缺失或未闭合（须以 +++ 开头、以独占一行的 +++ 结尾）")
-        return {}
+        return {}, text
     try:
-        return tomllib.loads(m.group(1))
+        return tomllib.loads(m.group(1)), m.group(2)
     except tomllib.TOMLDecodeError as e:
         errors.append(f"{path}: frontmatter TOML 解析失败: {e}")
-        return {}
+        return {}, m.group(2)
 
 
 def check_date(path: pathlib.Path, value) -> None:
@@ -60,7 +60,7 @@ for book_dir in books.values():
     if not idx.exists():
         errors.append(f"{book_dir}: 缺少 _index.md")
         continue
-    fm = parse_frontmatter(idx)
+    fm, _ = parse_frontmatter(idx)
     # 书 section 必须显式指定 book.html 模板，否则 Zola 回退 section.html（丢失书页布局）
     if fm.get("template") != "book.html":
         errors.append(f"{book_dir.name}: 缺少 template = \"book.html\"（否则书页回退默认 section 模板）")
@@ -94,7 +94,7 @@ for book_dir in books.values():
     for ch in book_dir.glob("*.md"):
         if ch.name == "_index.md":
             continue
-        fm = parse_frontmatter(ch)
+        fm, body = parse_frontmatter(ch)
         ch_extra = fm.get("extra", {})
         weight = fm.get("weight")
         # 章节页必须显式指定 chapter.html 模板，否则 Zola 回退到 page.html（丢失章号/导航/搜索标记）
@@ -142,6 +142,9 @@ for book_dir in books.values():
         is_published = (fm.get("draft", False) is False)
         if is_published and cr in ("unknown", "private-draft"):
             errors.append(f"{ch}: 已发布章节但所属书 copyrightStatus={cr} 不允许公开构建")
+        # 已发布章节正文不得为空（否则生成空页面且出现在书目录中指向空页）
+        if is_published and not body.strip():
+            errors.append(f"{ch}: 已发布章节正文为空（draft=false 须有正文；未写完请先 draft=true）")
 
 if errors:
     print("内容校验失败：")

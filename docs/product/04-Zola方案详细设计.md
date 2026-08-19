@@ -169,11 +169,14 @@ base_url = "https://mixtxt.example.com"
 title = "Mixtxt · AI 改编小说"
 description = "AI 辅助改编小说的单作者阅读站"
 default_language = "zh"
+author = "matrix"           # 顶层 author：供 Atom/RSS feed 的 <author>（放在 [extra] 不会被 feed 识别）
 
 # 内建能力
 compile_sass = true          # sass/main.scss -> public/main.css
 build_search_index = false   # 搜索用 Pagefind（构建后生成索引）；内置搜索（Fuse.js）对无空格中文分词不佳，勿开
 generate_feeds = true        # 自动 RSS/Atom（需页面有 date）
+generate_sitemap = true      # 自动 sitemap.xml
+feed_filenames = ["atom.xml"]  # 0.19 起字段名（原 feed_filename 已废弃）
 minify_html = true           # 压缩 HTML（可选，按需开启）
 
 # 分类法：书籍/章节都可打 tags（自动生成 /tags/ 页，模板见 §2.7；若首版不做标签页，删掉本节并清掉章节示例的 [taxonomies]）
@@ -186,8 +189,6 @@ taxonomies = [
 theme = "github-dark"
 
 [extra]
-author = "matrix"
-github = "https://github.com/your/mixtxt"
 copyright = "改编内容版权归原作者与作者所有；非公版内容仅作私人草稿。"
 ```
 
