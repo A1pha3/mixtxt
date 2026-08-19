@@ -10,7 +10,7 @@ build_search_index = false
 generate_feeds = true
 generate_sitemap = true
 minify_html = true
-feed_filename = "atom.xml"
+feed_filenames = ["atom.xml"]
 
 taxonomies = [
   { name = "tags", feed = true },
