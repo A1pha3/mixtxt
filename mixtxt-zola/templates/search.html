@@ -1,38 +1,60 @@
 {% extends "base.html" %}
+{% block title %}搜索 - {{ config.title }}{% endblock %}
 {% block content %}
 <h1>搜索</h1>
-<input id="q" type="search" placeholder="搜索章节标题或正文…" oninput="doSearch(this.value)">
+<input id="q" type="search" aria-label="搜索关键词" placeholder="搜索章节标题或正文…">
 <ul id="results"></ul>
+{% endblock %}
+{% block scripts %}
 <script>
 let pagefindPromise;
 function getPagefind() {
-  pagefindPromise ||= import("/pagefind/pagefind.js");   // 实例只加载一次
+  // 根相对路径：pagefind 索引与站点同根（Cloudflare Pages / 本地 serve 均成立），
+  // 不依赖 base_url，避免 get_url 生成占位域名绝对 URL 导致本地预览搜索失效。
+  pagefindPromise ||= import("/pagefind/pagefind.js");
   return pagefindPromise;
 }
 let seq = 0;
 async function doSearch(term) {
-  const box = document.getElementById("results");
+  let box = document.getElementById("results");
   term = term.trim();
-  if (!term) { box.innerHTML = ""; return; }
-  const my = ++seq;                        // 竞态守卫：只渲染最后一次输入的结果
-  const pagefind = await getPagefind();
-  const { results } = await pagefind.search(term);
+  if (!term) { box.replaceChildren(); return; }
+  let my = ++seq;
+  let pagefind;
+  try {
+    pagefind = await getPagefind();
+  } catch (e) {
+    box.innerHTML = "<li>搜索索引不可用，请稍后重试。</li>";
+    return;
+  }
+  let result = await pagefind.search(term);
   if (my !== seq) return;
-  box.innerHTML = "";
-  for (const r of results.slice(0, 20)) {
-    const data = await r.data();
-    const li = document.createElement("li");
-    const a = document.createElement("a");
+  box.replaceChildren();
+  if (!result.results.length) {
+    box.innerHTML = "<li>未找到匹配结果。</li>";
+    return;
+  }
+  for (let r of result.results.slice(0, 20)) {
+    let data = await r.data();
+    let li = document.createElement("li");
+    let a = document.createElement("a");
     a.href = data.url;
-    a.textContent = data.meta.title;       // textContent 而非 innerHTML：防注入
+    a.textContent = data.meta.title;
     li.append(a);
-    const doc = new DOMParser().parseFromString(data.content, "text/html");
-    const p = document.createElement("p");
-    p.className = "excerpt";
-    p.textContent = doc.body.textContent.slice(0, 80);   // 只取摘要纯文本，不注入 HTML => 防注入
-    li.append(p);
+    if (data.content) {
+      let doc = new DOMParser().parseFromString(data.content, "text/html");
+      let p = document.createElement("p");
+      p.className = "excerpt";
+      p.textContent = doc.body ? doc.body.textContent.slice(0, 80) : "";
+      li.append(p);
+    }
     box.append(li);
   }
 }
+let debounceTimer;
+document.getElementById("q").addEventListener("input", function(e) {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(function() { doSearch(e.target.value); }, 150);
+});
 </script>
 {% endblock %}

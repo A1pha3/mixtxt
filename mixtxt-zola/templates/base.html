@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ee" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1a1816" media="(prefers-color-scheme: dark)">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'">
+  <link rel="icon" type="image/svg+xml" href="{{ get_url(path='favicon.svg') }}">
+  {# 跨 block 共享变量的唯一通道：Tera 在 extends 中忽略 block 外的 set，须在此 block 声明 #}
+  {% block vars %}{% endblock vars %}
+  <title>{% block title %}{{ config.title }}{% endblock %}</title>
+  <meta name="description" content="{% block description %}{{ config.description }}{% endblock %}">
+  <link rel="canonical" href="{{ current_url | default(value=config.base_url) }}">
+  <meta property="og:title" content="{% block og_title %}{{ config.title }}{% endblock %}">
+  <meta property="og:description" content="{% block og_description %}{{ config.description }}{% endblock %}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ current_url | default(value=config.base_url) }}">
+  <meta property="og:image" content="{% block ogimage %}{{ get_url(path='favicon.svg') }}{% endblock %}">
+  <link rel="alternate" type="application/atom+xml" title="RSS" href="{{ get_url(path='atom.xml') }}">
+  <link rel="stylesheet" href="{{ get_url(path='main.css', cachebust=true) }}">
+  <script>
+  (function() {
+    var stored = localStorage.getItem('theme');
+    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    var theme = stored || (prefersDark ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.style.colorScheme = theme;
+  })();
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <a href="/">{{ config.title }}</a>
+    <nav><a href="{{ get_url(path='@/books/_index.md') }}">作品</a>
+         <a href="{{ get_url(path='@/search.md') }}">搜索</a>
+         <a href="{{ get_url(path='@/about.md') }}">关于</a>
+         <a href="{{ get_url(path='atom.xml') }}">RSS</a>
+         <button id="theme-toggle" class="theme-btn" aria-label="切换主题">
+           <svg class="sun-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+           <svg class="moon-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+         </button>
+    </nav>
+    <script>
+    document.getElementById('theme-toggle').addEventListener('click', function() {
+      var html = document.documentElement;
+      var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      html.style.colorScheme = next;
+      localStorage.setItem('theme', next);
+    });
+    </script>
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+  <footer class="site-footer"><p>{{ config.extra.copyright }}</p></footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

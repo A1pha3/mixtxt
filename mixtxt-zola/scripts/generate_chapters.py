@@ -10,13 +10,15 @@
   python3 scripts/generate_chapters.py --book sanguo-scifi --weights 5,7
   # 修订已有章节（保留 weight/slug/date/URL，只更新正文与 updatedAt）
   python3 scripts/generate_chapters.py --book sanguo-scifi --weights 5,7 --revise
+  # 受控发布：把指定章 draft=true 翻为 false（精确匹配 weight，如 5,6,7,8）
+  python3 scripts/generate_chapters.py --book sanguo-scifi --publish 5,6,7,8
   # --dry-run：只打印将处理的目标与 frontmatter 模板，不调用 LLM
 """
 import argparse, datetime, json, os, pathlib, re, subprocess, sys, time, tomllib, urllib.request, urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from zoneinfo import ZoneInfo
 
-ROOT = pathlib.Path(".")
+ROOT = pathlib.Path(__file__).resolve().parent.parent   # 脚本自定位仓库根，与调用方 cwd 无关
 BOOKS = ROOT / "content" / "books"
 LEDGERS = ROOT / "runs"                      # 每次运行的台账（可观测 + 精确重试依据）
 ALLOWED_COPYRIGHT = ("public-domain", "authorized")
@@ -45,9 +47,10 @@ def read_frontmatter(path: pathlib.Path) -> tuple:
 
 
 def toml_str(s: str) -> str:
-    """把字符串转成合法 TOML 字符串字面量（转义反斜杠/引号/换行）。"""
-    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') \
-                 .replace("\n", "\\n") + '"'
+    """把字符串转成合法 TOML 基本字符串字面量（转义控制字符/反斜杠/引号/换行）。"""
+    s = s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")\
+         .replace("\t", "\\t").replace("\r", "\\r")
+    return '"' + s + '"'
 
 
 def book_meta(book_dir: pathlib.Path) -> tuple:
@@ -84,19 +87,28 @@ def latest_published_seed(book_dir: pathlib.Path, limit: int = 300) -> str:
 
 
 def render_frontmatter(weight: int, title: str, desc: str, date, draft: bool,
-                       model: str, ca_ymd: str) -> str:
-    """按 §2.6 模板渲染 frontmatter；date 接受 datetime 或字符串，updatedAt 恒为今天。"""
+                       model: str, ca_ymd: str, aliases: list[str] | None = None) -> str:
+    """按 §2.6 模板渲染 frontmatter；date 接受 datetime 或字符串，updatedAt 恒为今天。
+
+    aliases 仅 --revise 透传原章防死链元数据（§2.8/§2.18），生成新章时为 None。
+    """
     date_s = date.isoformat(timespec="seconds") if isinstance(date, datetime.datetime) else str(date)
-    return (
+    fm = (
         "+++\n"
         f"title = {toml_str(title)}\n"
         f"description = {toml_str(desc)}\n"
+        'template = "chapter.html"\n'          # 章节页必须显式声明，否则 Zola 回退 page.html（丢章号/导航）
         f"weight = {weight}\n"
         f"draft = {'true' if draft else 'false'}\n"
         f"date = {date_s}\n"                       # 无引号 TOML datetime（官方建议不要用引号包日期）
+    )
+    if aliases:
+        fm += "aliases = [" + ", ".join(toml_str(a) for a in aliases) + "]\n"
+    return fm + (
         "[taxonomies]\n"
         'tags = ["AI改编"]\n'
         "[extra]\n"
+        f'weight = {weight}\n'                     # 显示副本：Zola 不暴露 page.weight，须镜像供模板显示章号
         f'createdAt = "{ca_ymd}"\n'
         f'updatedAt = "{now_cn().date().isoformat()}"\n'
         "[extra.ai]\n"
@@ -161,6 +173,8 @@ def main() -> int:
                     help="精确寻址的章号，逗号分隔，如 5,7,9；配合 --revise 修订、否则生成（重试补位用）")
     ap.add_argument("--revise", action="store_true",
                     help="修订已有章节（保留 weight/slug/date/URL，只更新正文与 updatedAt）")
+    ap.add_argument("--publish", default=None,
+                    help="受控发布：把指定章 draft=true 翻为 false（精确匹配 weight，如 5,6,7,8）")
     ap.add_argument("--context", default=None,
                     help="续写上下文种子；缺省自动取最新章节结尾约 300 字（仅生成时生效）")
     ap.add_argument("--title", help="书标题（默认读 _index.md 的 title）")
@@ -171,11 +185,20 @@ def main() -> int:
                     help="并发生成数（默认 4，上百章时建议 8-16）")
     args = ap.parse_args()
 
-    # 目标判定：--weights 显式寻址；否则按 --count 追加新章
-    if args.weights is None and args.count is None:
-        ap.error("需指定 --count 或 --weights")
+    # 目标判定：--publish 翻发、--weights 精确寻址、否则按 --count 追加新章
+    if args.weights is None and args.count is None and args.publish is None:
+        ap.error("需指定 --count、--weights 或 --publish")
+    if args.publish is not None and (args.weights is not None or args.count is not None or args.revise):
+        ap.error("--publish 不能与 --count/--weights/--revise 同用")
     if args.revise and args.weights is None:
         ap.error("--revise 需配合 --weights 指定要修订的章")
+
+    def parse_csv(raw: str, flag: str) -> list[int]:
+        """解析逗号分隔章号；非法输入以 parser 友好报错（不再裸 ValueError traceback）。"""
+        try:
+            return [int(x.strip()) for x in raw.split(",") if x.strip()]
+        except ValueError:
+            ap.error(f"{flag} 须为逗号分隔的章号数字，如 5,7,9")
 
     if not re.fullmatch(r"[a-z0-9-]+", args.book):
         print(f"书 slug 非法：{args.book}（只允许小写字母/数字/连字符）")
@@ -194,8 +217,17 @@ def main() -> int:
         return 1
 
     existing = weight_files(book_dir)
-    if args.weights is not None:
-        targets = [int(x.strip()) for x in args.weights.split(",") if x.strip()]
+    if args.publish is not None:
+        targets = parse_csv(args.publish, "--publish")
+        if not targets:
+            ap.error("--publish 为空")
+        missing = [w for w in targets if w not in existing]
+        if missing:
+            print(f"--publish 目标章不存在：{missing}")
+            return 1
+        mode = "publish"
+    elif args.weights is not None:
+        targets = parse_csv(args.weights, "--weights")
         if not targets:
             ap.error("--weights 为空")
         if args.revise:
@@ -221,12 +253,46 @@ def main() -> int:
             fm, _ = read_frontmatter(existing[targets[0]])
             print(f"[dry-run] 以原 frontmatter 为基底修订 {existing[targets[0]].name}"
                   f"（保留 weight={targets[0]}/draft={fm.get('draft')}）")
+        elif mode == "publish":
+            print(f"[dry-run] 将发布（draft=true -> false）：targets={targets}")
         else:
             print(render_frontmatter(targets[0], "示例章标题", "示例摘要",
                                      now_cn(), True,
                                      os.environ.get("LLM_MODEL", "gpt-4o-mini"),
                                      now_cn().date().isoformat()))
         return 0
+
+    # 发布模式：只做 `draft = true -> false` 的手术式替换，不重排/不重写其他字段
+    # （保持标题/description/aliases/ai 等既有元数据原样，避免覆盖人工修订）
+    if mode == "publish":
+        ok, failed, skipped = [], [], []
+        for w in targets:
+            path = existing[w]
+            fm, _ = read_frontmatter(path)
+            if fm.get("draft", False) is False:
+                skipped.append(w)
+                print(f"[{w:03d}] 已是发布（跳过）")
+                continue
+            try:
+                t = path.read_text(encoding="utf-8")
+                new = re.sub(r"^draft\s*=\s*true\s*$", "draft = false", t, flags=re.M)
+                if new == t:
+                    raise RuntimeError("frontmatter 未找到可翻转的 `draft = true` 独行")
+                path.write_text(new, encoding="utf-8")
+                ok.append(w)
+                print(f"[{w:03d}] 发布")
+            except Exception as e:
+                failed.append((w, str(e)))
+                print(f"[{w:03d}] 失败：{e}")
+        write_ledger(args.book, mode, targets, ok, failed)
+        if failed:
+            print(f"有 {len(failed)} 章发布失败：{', '.join(f'{w:03d}' for w, _ in failed)}")
+            return 1
+        if skipped:
+            print(f"跳过（已是发布）：{skipped}")
+        print("发布完成，运行校验：")
+        return subprocess.run([sys.executable, str(ROOT / "scripts" / "validate_content.py")],
+                              cwd=ROOT).returncode
 
     seed = args.context if args.context is not None else latest_published_seed(book_dir)
     model_default = os.environ.get("LLM_MODEL", "gpt-4o-mini")
@@ -250,8 +316,9 @@ def main() -> int:
                 draft = bool(fm.get("draft", False))
                 date_val = fm.get("date", now_cn())
                 model = (fm.get("extra", {}).get("ai", {}).get("model") or model_default)
+                aliases = fm.get("aliases")   # 透传防死链元数据，修订后旧 URL 仍有效（§2.8/§2.18）
                 path.write_text(
-                    render_frontmatter(w, title, desc, date_val, draft, model, ca)
+                    render_frontmatter(w, title, desc, date_val, draft, model, ca, aliases)
                     + "\n" + body, encoding="utf-8")
             else:
                 user = f"这是《{book_name}》的第 {w} 章，请写正文。"
@@ -292,7 +359,8 @@ def main() -> int:
         return 1
 
     print("生成完成，运行校验：")
-    return subprocess.run([sys.executable, "scripts/validate_content.py"]).returncode
+    return subprocess.run([sys.executable, str(ROOT / "scripts" / "validate_content.py")],
+                          cwd=ROOT).returncode
 
 
 if __name__ == "__main__":

@@ -10,23 +10,15 @@
 >
 > 原始需求：[AI改编小说网需求.md](./archive/AI改编小说网需求.md)
 >
-> 文档版本：1.8 ｜ 创建：2026-08-17 ｜ 最后更新：2026-08-18
+> 文档版本：1.12 ｜ 创建：2026-08-17 ｜ 最后更新：2026-08-19
 >
-> 1.8 变更（对抗性审查收尾，判断 4）：**小准确性问题 + 更强项**——① book.html 的 `{% if not page.draft %}` 加注为"双保险"（Zola 构建期已把草稿从 `section.pages` 移出，此判断通常恒真，保留防子目录漏排）；② §2.8 补"**重排 vs 改名**"：重排只改 `weight` 不改文件名/URL，改名（换 slug）会变 URL，须在 frontmatter 加 `aliases` 防死链。（搜索摘要改 DOMParser、批量发布改 weight 区间这两项已在 1.6 完成，此处不重复。）
+> 1.12 变更（对抗性审查第 11 轮，简洁性收敛）：① **变更历史压缩**——1.1~1.8 详细记录移出至 [CHANGELOG-04-Zola方案详细设计.md](./CHANGELOG-04-Zola方案详细设计.md)，文头只保留最近 3 版；② **§2.13 精简**——移除与 §2.18 重叠的批量发布命令和定时自动化实现细节，统一引用 §2.18 作为唯一实现参考。
 >
-> 1.7 变更（对抗性审查回顾，判断 3 落地）：**实现代码移回 repo 作为单一真实源**——`validate_content.py`（§2.12）、`generate_chapters.py`（§2.18）、`build.sh`（§2.12）、`templates/search.html`（§2.9）全文迁到仓库根 [`mixtxt-zola/`](../../mixtxt-zola/) 对应路径，文档正文改为"规则清单 + 关键实现要点 + 链接引用"，瘦身约 300 行、消除"文档与脚本双写漂移"；§2.12 旧"覆盖清单"并入新增的"校验规则"清单（去重）。阶段说明：站点仓库尚未初始化，此目录先在 `docs` 仓库内承载上述脚本的单一真源，Phase 0 `zola init` 时按 §2.4 结构展开。
+> 1.11 变更（对抗性审查第 10 轮，P0-P2 落地）：① §2.5 高亮配置随 Zola 0.22 迁移——`[markdown]` 的 `highlight_code`/`highlight_theme` 改为 `[markdown.highlighting] theme`（旧键在锁定的 0.23.3 下已失效，会构建报错/高亮失效）；② 全文"内置 Elasticlunr"事实更新为"内置搜索（Fuse.js）"（Zola 0.19 起内置搜索已换 Fuse.js，结论"需 Pagefind"不变；§2.1/§2.3/§2.5/§2.9/§2.16 同步）；③ `generate_chapters.py --revise` 保留 `aliases`（原重建式会丢防死链元数据），并明示"修订已发布章直接生效"语义；④ `--weights`/`--publish` 非法输入改为友好报错（原裸 ValueError traceback）；⑤ build.sh/validate/generate 自定位仓库根（原依赖调用方 cwd），validate 对缺失 content/books 友好报错；⑥ §2.4 目录树缩进修复、§2.7 标注"其余模板以本文档为唯一真源"。
 >
-> 1.6 变更（第一性对抗性审查回顾）：**收敛"单一真源"——删除文件名数字前缀**。原先 "weight==文件名数字前缀" 实为需手工同步的双副本，恰是 §2.8 重排两个 bug 的根因。现：章节文件改为**不承载章号的 `<slug>.md`**（书内唯一、仅作 URL slug），章号/排序/显示全由 `weight` 派生；validate 不再校验"文件名↔weight"，改为校验"weight 非负整数且书内唯一、slug 书内唯一"；§2.8 插章/删章/重排从"`sed -i`+`git mv`+`sort -r`"塌缩为"只改 weight 字段"，文件名/链接/URL 永不因重排改变，天然无 `git mv` 冲突与死链；harness 生成 `ch<weight>.md`（opaque slug）、起始章号改为读 frontmatter 的 weight（不再从文件名拆）；§2.13 批量发布改为按 weight 区间的 tiny python（消除 `005*.md` 误命中 4 位章号的 glob 隐患）；§2.5/§2.13 外链策略表述收敛到 §2.12 单点（防再次两处不自洽）；§2.9 结果摘要改 DOMParser 取纯文本。
+> 1.10 变更（定时自动化端到端，判断 F1+F2+G+H1 落地）：① **§2.13 新增"定时自动化接线"小节**——四个原子步（生成/修订 → 攒稿 → `--publish` 一次性翻发 → validate 通过才 `git pull --rebase`+commit+push），明确**节流铁律（草稿攒够批量才翻发、多 commit 少 build，压到每月 30–90 构建）**、**串行+幂等（同刻只跑一个任务、push 前 rebase、无改动不 commit，避撞免费层单并发构建）**、**台账自愈（读 `runs/` 失败记录用 `--weights` 补位重试）**；② **G：validate 补两条**——`updatedAt ≥ 发布日 date`、`aliases` 须为不含空白的非空字符串数组（§2.12 同步）；③ **H1：翻发收敛进 harness 的 `--publish`**——替代 §2.13 手写 `sed`/shell 批量改 `draft`，只做 `draft=true→false` 手术式替换（保留 title/description/`aliases`/`ai`），不能与 `--count/--weights/--revise` 同用，§2.18 三种模式补齐。
 >
-> 1.5 变更（对抗性审查第 7/8 轮）：**修复 §2.8 插章重排命令两个 bug**——`${p%%-*}` 对无 slug 文件名（`003.md`）不裁剪导致 `$((10#003.md))` 算术错误、`${p#"$w"}` 因 w 变整数错删前缀；且必须按章号**从大到小**处理（`sort -r`），否则先改名会占用后移目标名、`git mv` 冲突（正序 003→004 时 004 尚未移走）；现兼容 `003.md` 与 `003-huangjin.md`。**恢复 home.html 的 visibility 模板过滤**（经查 Zola 只保证 draft section 的子孙不处理、未保证其从父 section 的 `subsections` 移除，保留双保险防 hidden 书死链）。修正 §2.12 覆盖清单错误表述（`zola check` 只查链接、查不了 `ai.prompt` 引用与 semver，不能作为它们的兜底）。§2.17 中文搜索行补 PyPI 跑法。
->
-> 1.4 变更（对抗性审查第 6 轮）：**单一真源收敛——删 `extra.chapterNo` 与 `extra.book`**（与已删的 `wordCount`/`seo` 同一逻辑：章号由 `weight` 用 `"%03d"|format` 派生、书归属由目录唯一决定，存了只会造成第三份漂移源）；validate 一致性收敛为"文件名前缀==weight"两处；**build.sh 纳入 `zola check --skip-external-links`**（不发 HTTP，唯一入口补齐内部死链门禁；Actions 删独立那行）；补"连载中插章/删章/重排"指引与"批量发布受控命令"；home.html 删 visibility 模板过滤（hidden 书已由 section `draft=true` 构建期过滤，第 7/8 轮又恢复为双保险，见 1.5）；精简 Elasticlunr 重复表述（集中 §2.9）；harness 单章 LLM 失败不再拖垮整批（汇总失败清单继续其余）。
->
-> 1.3 变更（对抗性审查第 5 轮）：**构建入口收敛为 `scripts/build.sh`（校验+构建+索引唯一入口），修复 Cloudflare Pages 构建命令漏跑校验脚本的门禁缺口**；Actions 改调 build.sh 且 `zola check --skip-external-links`（修复与 §2.13 的自相矛盾）；删 `extra.wordCount`（Zola 原生 `page.word_count` 已按字符计，免手工维护）；og:image 对无封面书防御；CSS 加 `cachebust`；补"继续阅读"进度记忆与"本地 serve 无搜索索引"说明；validate 加 createdAt≤updatedAt。
->
-> 1.2 变更（对抗性审查第 4 轮）：chapter 导航加 `data-pagefind-ignore`（防搜索索引污染）；删误导性 `in_search_index`；base.html 补 canonical/OG（对齐 doc 03 §2.11 SEO 要求）；Pagefind 固定 `@1.5.2` 并补充 Python/PyPI 免 Node 跑法与"中文必须 extended 版"；validate 校验 `extra.book` 与目录一致；harness 加 API Key 缺失报错、429/5xx 重试、缺省读真实书名、desc 去 Markdown 标记；补 taxonomy 简版模板；§2.1/§2.15 过时表述修正。
->
-> 1.1 变更（对抗性审查第 3 轮）：中文搜索改 Pagefind（内置 Elasticlunr 对中文不可用）；`hidden` 书=书 section `draft=true`；prompts 移出 `content/`；删 `[extra.seo]` 死数据；validate 增加 文件名/weight/chapterNo 一致性、日期格式、hidden 联动门禁；harness 生成前版权 fail-fast、date 改无引号 TOML datetime；`ZOLA_VERSION` 0.23.2→0.23.3；注明 `zola check` 默认检查外部链接。
+> 1.9 变更（定时自动化适配，判断 A+B+C 落地）：harness `generate_chapters.py` 升级为**生成/修订双模式 + 精确寻址 + 前情上下文 + 确定时区 + 运行台账**——① 新增 `--revise`（改已有章，保留 `weight`/slug/`date`/URL，只重写正文并更新 `updatedAt`），补上"修改小说"的自动化闭环；② 新增 `--weights 5,7` 精确寻址，失败可 `--weights` 精确补位重试，不再有"中段失败章被永久跳过留空档"；③ 新增 `--context`（缺省 `latest_published_seed()` 取最新章节结尾约 300 字作续写前情种子），多轮定时连载不脱节；④ 时间统一 `ZoneInfo("Asia/Shanghai")`，与运行机/CI 的 UTC 无关，杜绝 `date`/RSS 漂移；⑤ 每次运行追加 `runs/<book>.jsonl` 台账（可观测 + 精确重试依据），失败时打印可复制重试命令。同步 §2.18 结构要点与 §2.4 树（新增 `runs/`）、`render_frontmatter`（`date` 保留原值、`updatedAt` 恒今天）。validate 的 `updatedAt≥date`、`aliases` 等补充留待后续（判断 E，本期不做）。
 
 ---
 
@@ -65,10 +57,10 @@ Zola + GitHub + Cloudflare Pages（单文件二进制、零依赖、Tera 模板�
 **为什么 Zola 在这里是 Hugo 的更优平替：**
 1. **单文件二进制、零依赖**：`zola build` 不需要 Go 工具链、不需要 Node、不需要插件生态；CI 里下一个二进制即可，比 Hugo extended 更轻。
 2. **模板更友好**：Tera 是 Jinja2 风格，比 Go template 易读易写；作者/维护者更易改阅读器。
-3. **内置能力齐全**：Sass 编译、代码高亮、`zola check` 链接检查（内/外链）全部内建；内置 Elasticlunr 搜索索引虽开箱即用，但**对中文分词不可用**，中文站需外接 Pagefind（唯一"内置但不适合中文"的能力，见 §2.9）。
+3. **内置能力齐全**：Sass 编译、代码高亮、`zola check` 链接检查（内/外链）全部内建；内置搜索索引（Fuse.js）虽开箱即用，但**对无空格中文分词不佳**，中文站需外接 Pagefind（唯一"内置但不适合中文"的能力，见 §2.9）。
 4. **Git 工作流完全同 Hugo**：AI 生成 `.md` → `git push` → Cloudflare Pages 自动 `zola build` 发布。
 
-**它不能满足的（与 Hugo 一致）：** 网页后台在线编辑（需接 Decap CMS / 自写编辑 UI，或换 Astro+Pages CMS）、读者网页版本切换（需按 tag 额外构建）、逐章 diff 页面。**内置 Elasticlunr 搜索对中文站不可用**（中文搜索需接 Pagefind，见 §2.9）。
+**它不能满足的（与 Hugo 一致）：** 网页后台在线编辑（需接 Decap CMS / 自写编辑 UI，或换 Astro+Pages CMS）、读者网页版本切换（需按 tag 额外构建）、逐章 diff 页面。**内置搜索（Fuse.js）对无空格中文站分词不佳**（中文搜索需接 Pagefind，见 §2.9）。
 
 ### 2.2 系统总览
 
@@ -113,7 +105,7 @@ zola --version
 > ① `npx pagefind@1.5.2 --site public`：npx **自动使用支持中/日文的 `pagefind_extended` 版**，Cloudflare 构建环境自带 Node；
 > ② 零 Node：`python3 -m pip install 'pagefind[extended]==1.5.2'` 后 `python3 -m pagefind --site public`（官方 PyPI 包装，同样 extended 版，与本方案 Python 校验脚本同生态）；
 > ③ 下载 GitHub 预编译二进制：**必须选 `pagefind_extended`，标准版不支持中文索引**。
-> 想彻底零外部依赖也可用 Zola 内置 Elasticlunr——但**它对中文分词不可用**（见 §2.9）。中文小说站建议接受 Pagefind 这一个依赖。
+> 想彻底零外部依赖也可用 Zola 内置搜索（Fuse.js）——但**它对无空格中文分词不佳**（见 §2.9）。中文小说站建议接受 Pagefind 这一个依赖。
 
 ### 2.4 仓库结构
 
@@ -126,11 +118,11 @@ mixtxt-zola/
 │   ├── _index.md                 # 首页：书籍列表（template = "home.html"）
 │   ├── books/
 │   │   ├── _index.md             # 书籍总览（template = "books.html"）
-│   │   └── sanguo-scifi/         # 一本书 = 一个 section
-│   │           ├── _index.md         # 书页：简介 + 章节目录（extra.* + sort_by=weight）
-│   │           ├── prologue.md      # 章节（weight=1）——文件名仅作 URL slug，不承载章号
-│   │           ├── huangjin.md      # 章节（weight=2）
-│   │       └── ...
+│   │   ├── sanguo-scifi/         # 一本书 = 一个 section
+│   │   │   ├── _index.md         # 书页：简介 + 章节目录（extra.* + sort_by=weight）
+│   │   │   ├── prologue.md       # 章节（weight=1）——文件名仅作 URL slug，不承载章号
+│   │   │   ├── huangjin.md       # 章节（weight=2）
+│   │   │   └── ...
 │   ├── releases/
 │   │   ├── _index.md             # 版本说明列表（template = "releases.html"）
 │   │   └── sanguo-scifi-v0-1-0.md
@@ -158,8 +150,9 @@ mixtxt-zola/
 │   └── _headers                  # Cloudflare 缓存/安全头
 ├── scripts/
 │   ├── validate_content.py       # 构建前校验（Python + tomllib）
-│   ├── generate_chapters.py      # AI 章节生成 harness（§2.18）
+│   ├── generate_chapters.py      # AI 章节生成/修订 harness（§2.18）
 │   └── build.sh                  # 校验 + zola check + build + pagefind 唯一入口
+├── runs/                         # harness 运行台账 runs/<book>.jsonl（§2.18，自动生成、可入 git 留审计）
 ├── .gitignore                    # 忽略 public/（含 pagefind/ 产物）
 └── README.md
 ```
@@ -179,7 +172,7 @@ default_language = "zh"
 
 # 内建能力
 compile_sass = true          # sass/main.scss -> public/main.css
-build_search_index = false   # 搜索用 Pagefind（构建后生成索引）；内置 elasticlunr 对中文不可用，勿开
+build_search_index = false   # 搜索用 Pagefind（构建后生成索引）；内置搜索（Fuse.js）对无空格中文分词不佳，勿开
 generate_feeds = true        # 自动 RSS/Atom（需页面有 date）
 minify_html = true           # 压缩 HTML（可选，按需开启）
 
@@ -188,9 +181,9 @@ taxonomies = [
   { name = "tags", feed = true },
 ]
 
-[markdown]
-highlight_code = true
-highlight_theme = "github-dark"   # 代码高亮主题（小说站可设 none）
+# 代码高亮（Zola 0.22+ 用 Giallo，配置在 [markdown.highlighting]；小说站不需要高亮则删掉本段，默认不高亮）
+[markdown.highlighting]
+theme = "github-dark"
 
 [extra]
 author = "matrix"
@@ -277,6 +270,8 @@ prompts/rewrite-style-guide.md    # 纯 Markdown 文本即可，无 frontmatter 
 > prompts 不是站点内容，放 `content/` 外就不会被 Zola 当页面处理（section `render=false` 不阻止子页面渲染，见 §2.4 说明）。AI 工作流直接按 `prompts/<slug>.md` 路径读取。
 
 ### 2.7 模板（Tera）
+
+> 真源说明：当前仅 `templates/search.html` 已在仓库根 [`mixtxt-zola/`](../../mixtxt-zola/) 落地（§2.9）；base/home/book/chapter 等其余模板**以本文档 §2.7 为唯一真源**，Phase 1 创建站点时按本文落地，避免文档与 repo 双写漂移。
 
 **base.html（骨架）**
 
@@ -435,9 +430,7 @@ python3 scripts/validate_content.py     # weight 为非负整数且书内唯一�
 
 ### 2.9 站内搜索（Pagefind，中文可用的唯一可靠静态方案）
 
-**为什么不用 Zola 内置 Elasticlunr：** Zola 的 `build_search_index` 生成 Elasticlunr 索引，但：
-- elasticlunr.js 前端库自 2017 年基本停更，**对中文分词不可用**（官方文档明确"非英语语言需额外引入对应 stemmer"；中文没有可用 stemmer，多位中文站点实测查询命中率不可用）；
-- 它把查询按空格/连字符切词，中文整句输入时前后端分词不一致，结果随机。
+**为什么不用 Zola 内置搜索：** Zola 的 `build_search_index`（0.19+ 基于 Fuse.js）把文本按空白切词索引，**对无空格的 CJK 分词不可用**——中文整句输入时前后端分词不一致、命中率低，Fuse.js 也没有面向中文的分词调优。
 
 中文小说站唯一可靠的静态搜索是 **Pagefind**（v1.5+ 原生 CJK 分词，构建时索引、浏览器端检索、分块加载，与 doc 03 推荐方案一致）：
 
@@ -496,9 +489,11 @@ Cloudflare Pages **原生支持 Zola**（v2 构建环境内置 Zola，默认 0.2
 Framework preset: 无（或 Zola）
 Build command:    if [ "$CF_PAGES_BRANCH" = "main" ]; then ./scripts/build.sh; else ./scripts/build.sh --base-url "$CF_PAGES_URL"; fi
 Build output:     public
-Root directory:   /
+Root directory:   mixtxt-zola   # 关键：站点在仓库子目录，必须指向 mixtxt-zola，否则找不到 scripts/ 且输出目录错配
 Environment variables: ZOLA_VERSION = 0.23.3   # 固定版本，避免漂移（2026-08-12 官方稳定版，修复低危安全漏洞）
 ```
+
+> **Root directory 必须设为 `mixtxt-zola`**：本仓库根 `mixtxt/` 下，`mixtxt-zola/` 才是 Zola 项目（含 `config.toml`/`content/`/`scripts/`）。若设为 `/`（仓库根），构建命令 `./scripts/build.sh` 会在仓库根找不到 `scripts/`（实际在 `mixtxt-zola/scripts/`），且 `zola build` 的输出 `public/` 会落错目录，与 Build output 设置错配。设成 `mixtxt-zola` 后，Cloudflare 以它为工作目录，`build.sh` 内的 `cd "$(dirname "$0")/.."` 也自定位到该目录，二者一致。
 
 - 构建命令用 **Cloudflare 官方推荐的分支判断**：生产分支（main）用 `config.toml` 的 `base_url`；预览分支（PR 预览）用 `CF_PAGES_URL` 动态覆盖，避免预览页资源加载失败。**分支判断在面板、构建逻辑在 `scripts/build.sh`（§2.12）**——它内部先跑校验脚本、再 `zola check --skip-external-links` 查内部死链、再 `zola build "$@"`、再 pagefind，是校验+链接检查+构建+索引的**唯一入口**，保证生产构建永不漏跑内容门禁（此前直接内联 `zola build` 时校验脚本并不执行，是门禁缺口）。
 - `static/_headers` 缓存策略同 doc 03 §2.12：HTML `max-age=3600`，`/covers/*`、`/images/*`、`/pagefind/*` 等设 `max-age=31536000, immutable`，并加安全响应头。
@@ -534,7 +529,7 @@ Zola 不像 Astro 有 Content Collections schema 强校验，所以用 `scripts/
 1. 每本书 section 必须有 `_index.md`；frontmatter 须以独占一行的 `+++` 闭合且 TOML 合法。
 2. 版权硬约束：`copyrightStatus ∈ {unknown, private-draft}` 不允许公开构建；`private-draft` 时 `visibility` 必须 `hidden`；`hidden` 书必须设 section `draft=true`（整本书不进构建）。
 3. 封面路径存在。
-4. 每章：文件名（slug）合法且书内唯一（只作 URL、不承载章号）；**`weight` 为非负整数且书内唯一**（单一真源：显示章号/排序/顺序都由它派生）；`date` 格式合法；`createdAt ≤ updatedAt`。
+4. 每章：文件名（slug）合法且书内唯一（只作 URL、不承载章号）；**`weight` 为非负整数且书内唯一**（单一真源：显示章号/排序/顺序都由它派生）；`date` 格式合法；`createdAt ≤ updatedAt` 且 `updatedAt ≥ 发布日 date`；`aliases`（若有）为不含空白的非空字符串数组。
 5. 已发布章节（`draft=false` 或缺省）不得挂在 `copyrightStatus ∈ {unknown, private-draft}` 的书下。
 
 **关键实现要点（防踩坑）：**
@@ -556,24 +551,9 @@ Zola 不像 Astro 有 Content Collections schema 强校验，所以用 `scripts/
 4. 确认无误后改 `draft = false`，`git commit` + `git push` 触发 Cloudflare Pages 构建。
 5. 构建前 `validate_content.py` 门控版权/一致性/封面；`build.sh` 内已含 `zola check --skip-external-links` 查**内部**死链（不发 HTTP）。**外部**链接的全量检查策略见 §2.12（默认发 HTTP、构建环境不稳易红，正文外链多时本地手动查一次）。
 
-> **发布判定**：Zola 用 `draft` 布尔表示发布（`false` = 已发布），等价于共享模型的 `status == "published"`。AI 自动化流水线可批量写 `draft=true` 草稿，再由人工（或受控脚本）翻 `draft=false`——**AI 负责生成草稿，人/受控步骤决定发布**，与 doc 03 §1.4 / §2.13 铁律一致。
->
-> 批量发布（受控翻草稿）：按章号区间把指定草稿翻为 `draft=false`，再跑校验确认，避免整本无差别全发。文件名不承载章号，故按 frontmatter 的 `weight` 区间匹配：
->
-> ```bash
-> # 把 weight 5-8 章从草稿翻为发布（draft=true -> false）；只动 `draft` 独行，书 _index.md 不受影响
-> python3 - "content/books/<slug>" <<'PY'
-> import pathlib, re, sys
-> for p in pathlib.Path(sys.argv[1]).glob("*.md"):
->     t = p.read_text(encoding="utf-8")
->     m = re.search(r"^weight = (\d+)$", t, re.M)
->     if m and 5 <= int(m.group(1)) <= 8:
->         p.write_text(re.sub(r"^draft = true$", "draft = false", t, flags=re.M), encoding="utf-8")
-> PY
-> scripts/validate_content.py && git add -A && git commit -m "publish: <slug> 5-8 章" && git push
-> ```
->
-> 用 Python 而非 shell glob，可精确匹配 weight 区间（避免 `005*.md` 误命中四位数章号）；`validate_content.py` 兜底确认每章字段合法后再提交。
+> **发布判定**：Zola 用 `draft` 布尔表示发布（`false` = 已发布），等价于共享模型的 `status == "published"`。AI 自动化流水线可批量写 `draft=true` 草稿，再由人工（或受控脚本）翻 `draft=false`——**AI 负责生成草稿，人/受控步骤决定发布**，与 doc 03 §1.4 / §2.13 铁律一致。批量发布（受控翻草稿）走 §2.18 的 `--publish` 模式，不再手写 `sed`/shell。
+
+**定时自动化接线**：详见 §2.18 harness 的定时确定性设计。四个原子步（生成/修订 → 攒稿 → `--publish` 翻发 → validate 通过才 push）串起来即完成定时任务；节流铁律、串行+幂等、台账自愈等设计决策均在 §2.18 中说明。
 
 ### 2.14 版本管理（同共享模型）
 
@@ -604,7 +584,7 @@ git tag v0.2.0 && git push origin v0.2.0
 | 私有草稿误入公开构建 | 校验脚本拦截 `copyrightStatus=unknown/private-draft`；本地 `zola serve --drafts` 仅作者可见 |
 | hidden 书被构建公开访问 | hidden 书必须设 section `draft=true`（整本书不进构建），validate 强制 |
 | 草稿进入搜索/导航 | `draft=true` 自动被 Zola 排除；Pagefind 只扫构建产物 |
-| 中文搜索不可用 | 内置 Elasticlunr 对中文分词不可用 → 用 Pagefind（v1.5+ 原生 CJK），见 §2.9 |
+| 中文搜索不可用 | 内置搜索（Fuse.js）对无空格中文分词不佳 → 用 Pagefind（v1.5+ 原生 CJK），见 §2.9 |
 | prompts 被当作页面渲染 | prompts 放 `content/` 之外的仓库根 `prompts/`，零 Zola 语义依赖 |
 | 外链检查拖慢/中断构建 | `zola check --skip-external-links` 跳过外部链接（内部死链仍查） |
 | Cloudflare 构建次数不够 | 本地预览后集中 push，控制频率（同 §1.5） |
@@ -641,20 +621,33 @@ git tag v0.2.0 && git push origin v0.2.0
 
 **关键设计（对抗性审查得出的稳健做法）：** 不让 AI 输出 frontmatter——**AI 只写正文 Markdown，frontmatter 由脚本统一生成**。原因：AI 输出 TOML 的格式不稳定（引号/字段名/日期格式极易飘），而脚本生成的 frontmatter 保证与 §2.6 示例、`validate_content.py` 的校验规则**逐字段一致**。AI 的活被压缩到"只写正文"这一件最擅长的事上。
 
-**完整实现见 [`mixtxt-zola/scripts/generate_chapters.py`](../../mixtxt-zola/scripts/generate_chapters.py)**（Python 3.11+，零第三方依赖，OpenAI 兼容 API）。结构要点：
-- `llm_chat()`：调 `/chat/completions`；缺 `LLM_API_KEY` 直接报错退出（fail-fast）；429/5xx 退避重试（共 3 次）。
-- `make_frontmatter()`：由脚本统一产出与 §2.6 逐字段一致的 frontmatter（`weight`/`draft=true`/无引号 TOML datetime/`[taxonomies].tags`/`[extra]`/`[extra.ai]`）——AI 只写正文、不碰 frontmatter。
-- `main()`：校验书 slug → fail-fast 版权门控（非 `public-domain`/`authorized` 拒绝）→ 从**现有章节 `max(weight)+1`** 起算章号（文件名不承载章号）→ 并发调 LLM 生成 `ch<weight>.md`（单章失败不拖垮整批，汇总失败清单）→ 最后跑 `validate_content.py` 兜底。
+**完整实现见 [`mixtxt-zola/scripts/generate_chapters.py`](../../mixtxt-zola/scripts/generate_chapters.py)**（Python 3.11+，零第三方依赖，OpenAI 兼容 API）。三种模式：
+- **生成（追加新章）**：`--count N`，从现有最大 `weight+1` 起追加；或 `--weights 5,7` 精确生成指定章（重试补位用，章已存在则报错）。
+- **修订（改已有章）**：`--weights 5,7 --revise`，保留 `weight`/slug/`date`/URL/`aliases` 等既有元数据，只重写正文并更新 `updatedAt`。注意：修订**保留原章 `draft` 状态**——修订已发布章会直接生效（不经草稿-审阅流程），敏感修订先用 `--dry-run` 确认，或改回 `draft=true` 复核后再发布。
+- **发布（翻草稿）**：`--publish 5,6,7`，把指定章 `draft=true` 翻为 `false`（手术式替换，保留其余元数据；已发布章跳过）。不能与 `--count/--weights/--revise` 同用。
+
+结构要点：
+- `read_frontmatter()`：按 `+++\n…\n+++` 解析出 `(frontmatter, 正文)`，全脚本复用（书元数据/扫 weight/取种子/修订）。
+- `render_frontmatter()`：渲染与 §2.6 逐字段一致的 frontmatter（`weight`/`draft`/无引号 TOML datetime/`[taxonomies].tags`/`[extra]`/`[extra.ai]`）；`--revise` 修订时透传原 `aliases`（防死链元数据）。`date` 保留原值、`updatedAt` 恒为今天——AI 只写正文、不碰 frontmatter。
+- `llm_chat()`：调 `/chat/completions`；缺 `LLM_API_KEY` 报错退出（fail-fast）；429/5xx 退避重试（共 3 次）。
+- `latest_published_seed()`：取最新章节（weight 最大且非草稿）结尾约 300 字作**续写前情种子**（多轮定时连载不脱节）；`--context` 可覆盖。
+- `main()`：校验书 slug → fail-fast 版权门控（非 `public-domain`/`authorized` 拒绝）→ 目标判定（`--count` 追加 / `--weights` 精确寻址：修订须已存在、生成须未占用）→ 并发处理（单章失败不拖垮整批）→ 写 `runs/<book>.jsonl` 台账 → 失败时打印可复制的精确重试命令 → 跑 `validate_content.py` 兜底。
+
+**为"定时自动化"设计的确定性：**
+- 时间统一 `ZoneInfo("Asia/Shanghai")`（UTC+8 无夏令时），与运行机/CI 的本地时区（多为 UTC）无关，杜绝章 `date`/RSS 排序漂移。
+- 每次运行追加 `runs/<book>.jsonl` 台账（时间/模式/目标/成功/失败+错误），无人值守可排障；`--weights` + 台账即精确重试依据，不再有"中段失败章被永久跳过留空档"。
+- `--dry-run` 不调 LLM、不写文件，先看会处理哪些目标。
 
 **使用前提与边界：**
 - 书目录 `content/books/<slug>/_index.md` 必须已存在。**脚本生成前先读 `extra.copyrightStatus`**：非 `public-domain`/`authorized` 立即拒绝（fail-fast）——不调 LLM、不写文件，版权门控从"生成后被 validate 拦"提前到"生成前拒绝"。
 - 生成的是 `draft=true` 草稿，不进构建/搜索/导航；作者 `zola serve --drafts` 预览修订后，改 `draft=false` 再 push 发布——**AI 负责生成草稿、人决定发布**的铁律由脚本结构强制保证。
 - `date` 输出为**无引号 TOML datetime**（`2026-06-03T10:00:00+08:00`）——Zola 官方明确不要用引号包日期；这与 §2.6 章节示例一致。
-- 缺 `LLM_API_KEY` 时直接报错退出（配置错误下所有章节都会失败，fail-fast）；429/5xx 自动退避重试（共 3 次），批量生成抗偶发限流；`--title` 缺省时读 `_index.md` 的真实书名喂给 LLM（而非 slug）。**单章永久错误（如模型不存在）不再中断整批**——其余章节继续生成，最后汇总失败清单并返回非零（配合重跑该区间即可补齐）。
-- 生成的文件名 `ch<weight>.md` 只是 **URL slug**（URL 为 `/books/<slug>/ch<weight>/`），不承载章号；想要语义化 URL，改名成 `huangjin.md` 即可，改后章号仍由 `weight` 决定、与文件名无关。validate 只要求文件名（slug）书内唯一、`weight` 为非负整数且书内唯一（§2.12）。
-- `--dry-run` 不调用 LLM、不写文件，用于先看会生成什么。
-- `--parallel N` 并发调用 LLM（默认 4，上百章建议 8-16）——并发下完成顺序不定，但章节号由脚本统一分配，结果一致。
-- 每章标题初始为"第 N 章"，`description` 取正文首行——**这两处都需要作者修订**，脚本故意不猜。
+- 缺 `LLM_API_KEY` 时直接报错退出（配置错误下所有章节都会失败，fail-fast）；429/5xx 自动退避重试（共 3 次）；`--title` 缺省时读 `_index.md` 真实书名（而非 slug）。**单章永久错误不中断整批**——其余继续，失败以退出码 1 + 精确重试命令收尾。
+- 生成的文件名 `ch<weight>.md` 只是 **URL slug**（URL 为 `/books/<slug>/ch<weight>/`），不承载章号；想要语义化 URL，改名成 `huangjin.md` 即可，改后章号仍由 `weight` 决定。**`--revise` 不改文件名/slug → URL 恒定，外链/书签不失效。**
+- `--weights` 语义：不带 `--revise`=生成该批新章（已存在则报错）；带 `--revise`=修订该批旧章（不存在则报错）——避免误覆盖。
+- `--publish` 语义：只做 `draft=true→false` 的手术式替换，保留其余元数据（标题/`description`/`aliases`/`ai`）；已发布章跳过；失败记 `runs` 台账。
+- `--parallel N` 并发调 LLM（默认 4，上百章建议 8-16）。
+- 每章标题初始为"第 N 章"、`description` 取正文首行，`--revise` 修订标题沿用原 `title`——**这些仍需作者复核**，脚本故意不猜。
 
 > 这个脚本的 frontmatter 与 §2.6 章节示例逐字段一致（`weight`/`draft`/`date`/`[taxonomies]`/`[extra]`/`[extra.ai]`），生成后必须通过 `validate_content.py` 才算完成闭环。若后续改用 Astro/Hugo（doc 03），同一思路换成各自 frontmatter 格式即可。
 

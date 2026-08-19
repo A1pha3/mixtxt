@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ section.title }} - {{ config.title }}{% endblock %}
+{% block description %}{{ section.description }}{% endblock %}
+{% block ogimage %}{% if section.extra.cover %}{{ get_url(path=section.extra.cover) }}{% else %}{{ get_url(path='favicon.svg') }}{% endif %}{% endblock %}
+{% block content %}
+<article class="book">
+  <header>
+    {% if section.extra.cover %}<img src="{{ section.extra.cover }}" alt="{{ section.title }}">{% endif %}
+    <h1>{{ section.title }}</h1>
+    <p class="meta">原作：{{ section.extra.original }} ｜ 状态：{{ section.extra.status }}</p>
+    <p class="summary">{{ section.description }}</p>
+    <p class="copyright">版权：{{ section.extra.copyrightStatus }}</p>
+  </header>
+  <h2>目录</h2>
+  <ol class="toc">
+  {% for page in section.pages %}
+    <li><a href="{{ page.permalink }}">{{ page.extra.weight }} {{ page.title }}</a></li>
+  {% endfor %}
+  </ol>
+</article>
+{% endblock %}

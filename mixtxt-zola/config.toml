@@ -1,0 +1,25 @@
+# 占位域名：仅用于本地构建。部署时须用 --base-url 覆盖真实域名
+# （build.sh 透传 "$@"，Cloudflare Pages 传 --base-url "$CF_PAGES_URL"）。
+base_url = "https://mixtxt.example.com"
+title = "Mixtxt · AI 改编小说"
+description = "AI 辅助改编小说的单作者阅读站"
+default_language = "zh"
+
+compile_sass = true
+build_search_index = false
+generate_feeds = true
+generate_sitemap = true
+minify_html = true
+feed_filename = "atom.xml"
+
+taxonomies = [
+  { name = "tags", feed = true },
+]
+
+[markdown.highlighting]
+theme = "github-dark"
+
+[extra]
+author = "matrix"
+github = "https://github.com/your/mixtxt"
+copyright = "改编内容版权归原作者与作者所有；非公版内容仅作私人草稿。"

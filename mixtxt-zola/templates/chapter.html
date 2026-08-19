@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{# Zola 渲染 page 时不注入父 section；经 vars block 在渲染前取回（page.ancestors 末项即直接父）。
+   本章只用到 section 元数据（title/description/permalink/extra），不必加载全部章节，长篇构建省内存 #}
+{% block vars %}
+{% set section = get_section(path=page.ancestors | last, metadata_only=true) %}
+{% endblock vars %}
+{% block title %}{{ page.extra.weight }} {{ page.title }} - {{ section.title }} - {{ config.title }}{% endblock %}
+{% block description %}{{ page.description | default(value=section.description) }}{% endblock %}
+{% block ogimage %}{% if section.extra.cover %}{{ get_url(path=section.extra.cover) }}{% else %}{{ get_url(path='favicon.svg') }}{% endif %}{% endblock %}
+{% block content %}
+<article class="chapter" data-pagefind-body>
+  <header><h1>{{ page.extra.weight }} {{ page.title }}</h1></header>
+  {{ page.content | safe }}
+  <nav class="chapter-nav" data-pagefind-ignore>
+    {% if page.lower %}<a href="{{ page.lower.permalink }}">← 上一章</a>{% endif %}
+    <a href="{{ section.permalink }}">目录</a>
+    {% if page.higher %}<a href="{{ page.higher.permalink }}">下一章 →</a>{% endif %}
+  </nav>
+</article>
+{% endblock %}
