@@ -21,12 +21,23 @@ from zoneinfo import ZoneInfo
 ROOT = pathlib.Path(__file__).resolve().parent.parent   # 脚本自定位仓库根，与调用方 cwd 无关
 BOOKS = ROOT / "content" / "books"
 LEDGERS = ROOT / "runs"                      # 每次运行的台账（可观测 + 精确重试依据）
+STYLE_GUIDE = ROOT / "prompts" / "rewrite-style-guide.md"   # 可选：AI 改编风格指南（不存在则跳过）
 ALLOWED_COPYRIGHT = ("public-domain", "authorized")
 CN_TZ = ZoneInfo("Asia/Shanghai")            # 时间统一为北京时间；与运行机/CI 的本地时区（UTC）无关
-SYSTEM_PROMPT = """你是小说章节作者。只输出章节正文（Markdown），
+BASE_PROMPT = """你是小说章节作者。只输出章节正文（Markdown），
 不要输出 frontmatter、不要解释、不要用代码块包裹正文。
 要求：{style}
 正文不超过 4000 字，结尾留钩子便于下一章衔接。"""
+
+
+def system_prompt(style: str) -> str:
+    """拼装系统提示词：BASE_PROMPT + 可选的 prompts/rewrite-style-guide.md 风格指南。"""
+    base = BASE_PROMPT.format(style=style)
+    if STYLE_GUIDE.exists():
+        guide = STYLE_GUIDE.read_text(encoding="utf-8").strip()
+        if guide:
+            base = base + f"\n\n=== 改编风格指南 ===\n{guide}"
+    return base
 
 
 def now_cn() -> datetime.datetime:
@@ -307,7 +318,7 @@ def main() -> int:
                 ctx = old_body.replace("\n", " ").strip()[:800]   # 供修订参考的现有正文
                 user = (f"请精修《{book_name}》第 {w} 章的正文，保持情节/人物/设定连贯，"
                         f"不要变换叙事视角。\n\n=== 现有正文（供修订）===\n{ctx}\n===")
-                body = llm_chat(SYSTEM_PROMPT.format(style=args.style), user)
+                body = llm_chat(system_prompt(args.style), user)
                 title = fm.get("title") or f"第 {w} 章"
                 first = re.sub(r"^#+\s*", "", body.split("\n")[0])
                 desc = (first[:60] or title)
@@ -324,7 +335,7 @@ def main() -> int:
                 user = f"这是《{book_name}》的第 {w} 章，请写正文。"
                 if seed:
                     user += f"\n\n=== 前情（上一章结尾，供衔接）===\n{seed}\n==="
-                body = llm_chat(SYSTEM_PROMPT.format(style=args.style), user)
+                body = llm_chat(system_prompt(args.style), user)
                 title = f"第 {w} 章"          # 人工修订时可改成真实标题
                 first = re.sub(r"^#+\s*", "", body.split("\n")[0])   # 去掉首行 Markdown 标题标记
                 desc = (first[:60] or f"第 {w} 章")
