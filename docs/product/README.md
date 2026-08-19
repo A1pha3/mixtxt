@@ -9,6 +9,7 @@ docs/product/
 ├── 02-动态付费平台架构设计.md               ← 场景 B：付费平台（Payload / Next.js / 微信小程序 / PocketBase）
 ├── 03-轻量静态站架构设计.md                 ← 场景 A：AI 改编小说网静态站（Astro+Pages CMS / Hugo / Astro+Keystatic；Zola 见 04）
 ├── 04-Zola方案详细设计.md                 ← 场景 A：Zola（Rust）专属详细设计（含 AI 内容生成 harness）
+├── 05-CloudflarePages部署运维手册.md       ← 场景 A：Cloudflare Pages 部署流程 / 自定义域名 522 根因 / 故障排查（部署权威文档）
 └── archive/                                 ← 旧版单方案文档（已整合，保留备查）
 ```
 
@@ -34,7 +35,8 @@ docs/product/
    - **场景 A（静态站）**：[03-轻量静态站架构设计.md](./03-轻量静态站架构设计.md)
      - 第一部分：共享基础设计（内容模型/章节导航/版本管理/部署限制/版权）
      - 推荐方案：Astro + Pages CMS｜备选：Hugo｜备选：Astro + Keystatic｜备选：Zola（详见 04，含 AI 生成 harness）
-3. **备查**：[archive/](./archive/) — 整合前的原始文档，保留完整历史细节
+3. **部署上线**：[05-CloudflarePages部署运维手册.md](./05-CloudflarePages部署运维手册.md) — 连 Git / 配构建 / 自定义域名（522 根因）/ 故障排查 / 上线检查清单
+4. **备查**：[archive/](./archive/) — 整合前的原始文档，保留完整历史细节
 
 ## 全局设计约定（所有方案统一适用）
 
