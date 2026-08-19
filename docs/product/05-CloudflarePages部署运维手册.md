@@ -134,7 +134,7 @@ Cloudflare Pages **只服务它明确登记过的主机名**。两条铁律：
 ### 4.2 正确步骤
 
 1. Cloudflare 控制台 → `Workers & Pages` → 你的项目 → **Settings → Custom domains**。
-2. 点 **Add a domain / Set up a custom domain**，输入完整主机名（如 `www.txtmix.com`）。
+2. 点 **Add a domain / Set up a custom domain**，输入完整主机名（如 `www.mixtxt.com`）。
 3. 按页面提示完成验证：
    - **域名 DNS 托管在 Cloudflare**（用 CF 的 NS）：自动建好 CNAME（橙云代理），无需手动加。
    - **域名不在 Cloudflare**：页面会给出它需要的具体 DNS 记录，**照它给的填**（目标通常仍是 `项目名.pages.dev`）。把你原来手填的那条删掉或改成指定的。
@@ -163,23 +163,23 @@ curl -I https://www.example.com
 # 若返回 522 → 没在 Pages 登记（§4.1）；若返回 526 → 证书未就绪，等 Active
 ```
 
-### 4.5 真实案例复盘：`www.txtmix.com` 报 522
+### 4.5 真实案例复盘：`www.mixtxt.com` 报 522
 
 **现象**（实测）：
 
 ```text
-https://text-matrix.pages.dev   → HTTP/2 200   ✅ 站点本身正常
-https://www.txtmix.com          → HTTP/2 522   ❌ 自定义域名打不开
+https://mixtxt.pages.dev   → HTTP/2 200   ✅ 站点本身正常
+https://www.mixtxt.com          → HTTP/2 522   ❌ 自定义域名打不开
 ```
 
-**根因**：站点部署成功（`*.pages.dev` 能 200），但 `www.txtmix.com` 只加了裸 CNAME（`www → text-matrix.pages.dev`），**未在 Pages 项目 `text-matrix` 的 Custom domains 里登记**。Pages 后端不认识该主机 → 522。
+**根因**：站点部署成功（`*.pages.dev` 能 200），但 `www.mixtxt.com` 只加了裸 CNAME（`www → mixtxt.pages.dev`），**未在 Pages 项目 `mixtxt` 的 Custom domains 里登记**。Pages 后端不认识该主机 → 522。
 
-**修复**：进入 `text-matrix` 项目 → Settings → Custom domains → 添加 `www.txtmix.com` → 等证书 Active → 无痕窗口验证。
+**修复**：进入 `mixtxt` 项目 → Settings → Custom domains → 添加 `www.mixtxt.com` → 等证书 Active → 无痕窗口验证。
 
 **附带检查项**：
 - 若域名在 Cloudflare，确认 CNAME 是橙云（Proxied），不是灰云（DNS only）。
-- 想让裸域名 `txtmix.com`（不带 www）也能访问，同样在 Custom domains 里把 `txtmix.com` 也加上（CF 自动做 CNAME 扁平化，不受 apex 限制）。
-- 域名拼写：`mixtxt`（项目名）vs `txtmix.com`（域名）不同，确认非笔误。
+- 想让裸域名 `mixtxt.com`（不带 www）也能访问，同样在 Custom domains 里把 `mixtxt.com` 也加上（CF 自动做 CNAME 扁平化，不受 apex 限制）。
+- 域名拼写：`mixtxt`（项目名）vs `mixtxt.com`（域名）不同，确认非笔误。
 
 ---
 
