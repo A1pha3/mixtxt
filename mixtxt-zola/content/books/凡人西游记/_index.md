@@ -13,7 +13,7 @@ visibility = "public"
 cover = "/covers/fanren-xiyou.jpg"
 copyrightStatus = "public-domain"
 startedAt = "2026-08-20"
-updatedAt = "2026-08-20T14:05:00+08:00"
+updatedAt = "2026-08-20T14:35:00+08:00"
 +++
 
 # 简介
@@ -97,3 +97,6 @@ updatedAt = "2026-08-20T14:05:00+08:00"
 - [第四十五章 幽冥界前波未平](./chapter-45.md)　*（已写）*
 - [第四十六章 轮回漏开灯欲灭](./chapter-46.md)　*（已写）*
 - [第四十七章 九钥六镇幽冥定](./chapter-47.md)　*（已写）*
+- [第四十八章 九幽渊前波未平](./chapter-48.md)　*（已写）*
+- [第四十九章 轮回枢裂渊欲吞](./chapter-49.md)　*（已写）*
+- [第五十章 九钥七镇九幽定](./chapter-50.md)　*（已写）*
