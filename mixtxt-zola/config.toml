@@ -24,8 +24,8 @@ theme = "github-dark"
 copyright = "改编内容版权归原作者与作者所有；非公版内容仅作私人草稿。"
 
 # Google AdSense 自动广告配置
-# client：AdSense 发布商 ID，格式如 pub-XXXXXXXXXXXXXXXX 或 ca-pub-XXXXXXXXXXXXXXXX
+# client：官方广告代码中的完整 client 参数，必须带 ca-pub- 前缀（例如 ca-pub-3883067925168693）
 # enabled：设为 false 即一键停用全站广告脚本
 [extra.ads]
-client = "pub-3883067925168693"
+client = "ca-pub-3883067925168693"
 enabled = true
