@@ -13,7 +13,7 @@ visibility = "public"
 cover = "/covers/fanren-xiyou.jpg"
 copyrightStatus = "public-domain"
 startedAt = "2026-08-20"
-updatedAt = "2026-08-20"
+updatedAt = "2026-08-20T12:39:00+08:00"
 +++
 
 # 简介
@@ -85,3 +85,6 @@ updatedAt = "2026-08-20"
 - [第三十三章 汐渚村中养伤日](./chapter-33.md)　*（已写）*
 - [第三十四章 东海钥动波未平](./chapter-34.md)　*（已写）*
 - [第三十五章 海眼将溃填钥芯](./chapter-35.md)　*（已写）*
+- [第三十六章 归途青牛守村阵](./chapter-36.md)　*（已写）*
+- [第三十七章 南焚火起南极红](./chapter-37.md)　*（已写）*
+- [第三十八章 南极火镇焚天钥](./chapter-38.md)　*（已写）*
