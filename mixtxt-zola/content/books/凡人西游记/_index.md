@@ -13,7 +13,7 @@ visibility = "public"
 cover = "/covers/fanren-xiyou.jpg"
 copyrightStatus = "public-domain"
 startedAt = "2026-08-20"
-updatedAt = "2026-08-20T12:39:00+08:00"
+updatedAt = "2026-08-20T13:03:00+08:00"
 +++
 
 # 简介
@@ -88,3 +88,6 @@ updatedAt = "2026-08-20T12:39:00+08:00"
 - [第三十六章 归途青牛守村阵](./chapter-36.md)　*（已写）*
 - [第三十七章 南焚火起南极红](./chapter-37.md)　*（已写）*
 - [第三十八章 南极火镇焚天钥](./chapter-38.md)　*（已写）*
+- [第三十九章 西极金矿沉金危](./chapter-39.md)　*（已写）*
+- [第四十章 沉金谷底金气溃](./chapter-40.md)　*（已写）*
+- [第四十一章 九钥四镇西极定](./chapter-41.md)　*（已写）*
