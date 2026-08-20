@@ -29,3 +29,9 @@ copyright = "改编内容版权归原作者与作者所有；非公版内容仅�
 [extra.ads]
 client = "ca-pub-3883067925168693"
 enabled = true
+
+# Google Analytics 4 (gtag.js) 配置
+# gtag：GA4 衡量 ID，格式 G-XXXXXXXXXX；enabled 设为 false 即一键停用全站统计
+[extra.analytics]
+gtag = "G-V3X2ER5GNF"
+enabled = true

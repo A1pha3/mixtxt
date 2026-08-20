@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f5f3ee" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#1a1816" media="(prefers-color-scheme: dark)">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.googlesyndication.com https://*.doubleclick.net https://*.googleadservices.com; img-src 'self' data: https://*.googlesyndication.com https://*.doubleclick.net https://*.gstatic.com; style-src 'self' 'unsafe-inline' https://*.googlesyndication.com https://*.gstatic.com; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://pagead2.googlesyndication.com https://*.googlesyndication.com; connect-src 'self' https://*.googleadservices.com https://*.doubleclick.net https://*.google-analytics.com; font-src 'self' https://*.gstatic.com; frame-src https://*.googlesyndication.com https://*.doubleclick.net https://*.googleadservices.com https://*.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://*.googlesyndication.com https://*.doubleclick.net https://*.googleadservices.com; img-src 'self' data: https://*.googlesyndication.com https://*.doubleclick.net https://*.gstatic.com; style-src 'self' 'unsafe-inline' https://*.googlesyndication.com https://*.gstatic.com; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://pagead2.googlesyndication.com https://*.googlesyndication.com https://www.googletagmanager.com; connect-src 'self' https://*.googleadservices.com https://*.doubleclick.net https://*.google-analytics.com https://*.googletagmanager.com; font-src 'self' https://*.gstatic.com; frame-src https://*.googlesyndication.com https://*.doubleclick.net https://*.googleadservices.com https://*.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'">
   <link rel="icon" type="image/svg+xml" href="{{ get_url(path='favicon.svg') }}">
   {# 跨 block 共享变量的唯一通道：Tera 在 extends 中忽略 block 外的 set，须在此 block 声明 #}
   {% block vars %}{% endblock vars %}
@@ -31,6 +31,16 @@
   {% if config.extra.ads and config.extra.ads.enabled and config.extra.ads.client %}
   {# Google AdSense 自动广告：启用 Auto ads 后由 Google 决定广告位，无需手工埋点 #}
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ config.extra.ads.client }}" crossorigin="anonymous"></script>
+  {% endif %}
+  {% if config.extra.analytics and config.extra.analytics.enabled and config.extra.analytics.gtag %}
+  {# Google Analytics 4 (gtag.js)：全站访问统计 #}
+  <script async src="https://www.googletagmanager.com/gtag/js?id={{ config.extra.analytics.gtag }}"></script>
+  <script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', '{{ config.extra.analytics.gtag }}');
+  </script>
   {% endif %}
 </head>
 <body>
