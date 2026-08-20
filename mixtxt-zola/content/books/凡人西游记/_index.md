@@ -13,7 +13,7 @@ visibility = "public"
 cover = "/covers/fanren-xiyou.jpg"
 copyrightStatus = "public-domain"
 startedAt = "2026-08-20"
-updatedAt = "2026-08-20T15:35:00+08:00"
+updatedAt = "2026-08-20T16:18:00+08:00"
 +++
 
 # 简介
@@ -103,3 +103,9 @@ updatedAt = "2026-08-20T15:35:00+08:00"
 - [第五十一章 四海眼开潮倒灌](./chapter-51.md)　*（已写）*
 - [第五十二章 底下的口蚀祖醒](./chapter-52.md)　*（已写）*
 - [第五十三章 九钥九镇天骨成](./chapter-53.md)　*（已写）*
+
+## 第六卷 · 蚀祖终战
+
+- [第五十四章 残殿灯明网重结](./chapter-54.md)　*（已写）*
+- [第五十五章 寒眼全睁古劫回](./chapter-55.md)　*（已写）*
+- [第五十六章 抽骨夺天两相争](./chapter-56.md)　*（已写）*
