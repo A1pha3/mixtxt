@@ -13,7 +13,7 @@ visibility = "public"
 cover = "/covers/fanren-xiyou.jpg"
 copyrightStatus = "public-domain"
 startedAt = "2026-08-20"
-updatedAt = "2026-08-20T18:50:00+08:00"
+updatedAt = "2026-08-20T19:30:00+08:00"
 +++
 
 # 简介
@@ -121,3 +121,9 @@ updatedAt = "2026-08-20T18:50:00+08:00"
 - [第六十三章 青牛村中续课难](./chapter-63.md)　*（已写）*
 - [第六十四章 仿先生现饵人心](./chapter-64.md)　*（已写）*
 - [第六十五章 千万双手骨为篱](./chapter-65.md)　*（已写）*
+
+## 第八卷 · 拔老根
+
+- [第六十六章 拔根令下九州应](./chapter-66.md)　*（已写）*
+- [第六十七章 直捣残殿根未绝](./chapter-67.md)　*（已写）*
+- [第六十八章 千手拔根残殿崩](./chapter-68.md)　*（已写）*
