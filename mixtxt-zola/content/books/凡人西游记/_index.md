@@ -13,7 +13,7 @@ visibility = "public"
 cover = "/covers/fanren-xiyou.jpg"
 copyrightStatus = "public-domain"
 startedAt = "2026-08-20"
-updatedAt = "2026-08-20T20:18:00+08:00"
+updatedAt = "2026-08-20T21:18:00+08:00"
 +++
 
 # 简介
@@ -133,3 +133,6 @@ updatedAt = "2026-08-20T20:18:00+08:00"
 - [第六十九章 新天底下旧饵生](./chapter-69.md)　*（已写）*
 - [第七十章 北地小座真人来](./chapter-70.md)　*（已写）*
 - [第七十一章 千万手织九州网](./chapter-71.md)　*（已写）*
+- [第七十二章 西极肃气私塾争](./chapter-72.md)　*（已写）*
+- [第七十三章 座念寻路北地来](./chapter-73.md)　*（已写）*
+- [第七十四章 千家识符网更密](./chapter-74.md)　*（已写）*
