@@ -49,7 +49,7 @@ footer { text-align: center; padding: 2rem; color: var(--color-muted); font-size
 .site-intro { margin-bottom: 2rem; color: var(--color-muted); font-size: 1.1rem; }
 .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem; }
 .book-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 1rem; }
-.book-card img { width: 100%; height: 200px; object-fit: cover; border-radius: 4px; }
+.book-card img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 4px; }
 .book-card h2 { margin: 0.5rem 0; }
 .book-card .meta { color: var(--color-muted); font-size: 0.85rem; }
 .chapter { max-width: var(--reader-width); margin: 0 auto; }
