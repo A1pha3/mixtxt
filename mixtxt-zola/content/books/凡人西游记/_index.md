@@ -13,7 +13,7 @@ visibility = "public"
 cover = "/covers/fanren-xiyou.jpg"
 copyrightStatus = "public-domain"
 startedAt = "2026-08-20"
-updatedAt = "2026-08-20T22:38:00+08:00"
+updatedAt = "2026-08-20T23:00:00+08:00"
 totalVolumes = 6
 chaptersPerVolume = 300
 +++
@@ -38,7 +38,7 @@ chaptersPerVolume = 300
 
 # 目录（共六卷，每卷三百章）
 
-- [第一卷（第 1-300 章）](./volume-01/)　*尘微起步 · 风起云涌 · 西行历劫 · 天倾补天 · 新天教人 · 残根种须（已写至 80 章）*
+- [第一卷（第 1-300 章）](./volume-01/)　*尘微起步 · 风起云涌 · 西行历劫 · 天倾补天 · 新天教人 · 残根种须（已写至 83 章）*
 - [第二卷（第 301-600 章）](./volume-02/)　*（待续）*
 - [第三卷（第 601-900 章）](./volume-03/)　*（待续）*
 - [第四卷（第 901-1200 章）](./volume-04/)　*（待续）*
