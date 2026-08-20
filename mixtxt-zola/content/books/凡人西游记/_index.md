@@ -13,7 +13,7 @@ visibility = "public"
 cover = "/covers/fanren-xiyou.jpg"
 copyrightStatus = "public-domain"
 startedAt = "2026-08-20"
-updatedAt = "2026-08-20T21:18:00+08:00"
+updatedAt = "2026-08-20T22:04:00+08:00"
 +++
 
 # 简介
@@ -136,3 +136,6 @@ updatedAt = "2026-08-20T21:18:00+08:00"
 - [第七十二章 西极肃气私塾争](./chapter-72.md)　*（已写）*
 - [第七十三章 座念寻路北地来](./chapter-73.md)　*（已写）*
 - [第七十四章 千家识符网更密](./chapter-74.md)　*（已写）*
+- [第七十五章 残殿学网网中网](./chapter-75.md)　*（已写）*
+- [第七十六章 寒渊念转镜中镜](./chapter-76.md)　*（已写）*
+- [第七十七章 千手辨网真伪分](./chapter-77.md)　*（已写）*
