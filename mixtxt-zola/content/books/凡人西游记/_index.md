@@ -13,7 +13,7 @@ visibility = "public"
 cover = "/covers/fanren-xiyou.jpg"
 copyrightStatus = "public-domain"
 startedAt = "2026-08-20"
-updatedAt = "2026-08-20T18:10:00+08:00"
+updatedAt = "2026-08-20T18:50:00+08:00"
 +++
 
 # 简介
@@ -118,3 +118,6 @@ updatedAt = "2026-08-20T18:10:00+08:00"
 - [第六十章 青牛村里开蒙课](./chapter-60.md)　*（已写）*
 - [第六十一章 北地去旱余烬燃](./chapter-61.md)　*（已写）*
 - [第六十二章 南海异潮蛟王道](./chapter-62.md)　*（已写）*
+- [第六十三章 青牛村中续课难](./chapter-63.md)　*（已写）*
+- [第六十四章 仿先生现饵人心](./chapter-64.md)　*（已写）*
+- [第六十五章 千万双手骨为篱](./chapter-65.md)　*（已写）*
