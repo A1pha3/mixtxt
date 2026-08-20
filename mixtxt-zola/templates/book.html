@@ -7,15 +7,41 @@
   <header>
     {% if section.extra.cover %}<img src="{{ section.extra.cover }}" alt="{{ section.title }}">{% endif %}
     <h1>{{ section.title }}</h1>
-    <p class="meta">原作：{{ section.extra.original }} ｜ 状态：{{ section.extra.status }}</p>
+    <p class="meta">{% if section.extra.original %}原作：{{ section.extra.original }} ｜ {% endif %}状态：{{ section.extra.status | default(value="serializing") }}</p>
     <p class="summary">{{ section.description }}</p>
-    <p class="copyright">版权：{{ section.extra.copyrightStatus }}</p>
+    <p class="copyright">{% if section.extra.copyrightStatus %}版权：{{ section.extra.copyrightStatus }}{% endif %}</p>
   </header>
+  {# 分卷结构：若本节存在子卷（subsections），先列卷导航；再展开各卷章节。
+     扁平结构（无子卷）直接列全部章节。 #}
+  {% set subsections = section.subsections %}
+  {% if subsections %}
+  <h2>分卷</h2>
+  <ul class="volumes">
+    {% for sub_path in subsections %}
+      {% set sub = get_section(path=sub_path) %}
+      <li><a href="{{ sub.permalink }}">{{ sub.title }}</a>
+        {% if sub.extra and sub.extra.status == "upcoming" %}（待续）{% else %}（已写 {{ sub.pages | length }} 章）{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+  {% for sub_path in subsections %}
+    {% set sub = get_section(path=sub_path) %}
+    {% if sub.pages %}
+    <h2>{{ sub.title }}</h2>
+    <ol class="toc">
+    {% for page in sub.pages %}
+      <li><a href="{{ page.permalink }}">{{ page.extra.weight }} {{ page.title }}</a></li>
+    {% endfor %}
+    </ol>
+    {% endif %}
+  {% endfor %}
+  {% else %}
   <h2>目录</h2>
   <ol class="toc">
   {% for page in section.pages %}
     <li><a href="{{ page.permalink }}">{{ page.extra.weight }} {{ page.title }}</a></li>
   {% endfor %}
   </ol>
+  {% endif %}
 </article>
 {% endblock %}
