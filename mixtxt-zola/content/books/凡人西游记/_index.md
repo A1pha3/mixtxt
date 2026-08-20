@@ -13,7 +13,7 @@ visibility = "public"
 cover = "/covers/fanren-xiyou.jpg"
 copyrightStatus = "public-domain"
 startedAt = "2026-08-20"
-updatedAt = "2026-08-20T16:18:00+08:00"
+updatedAt = "2026-08-20T17:22:00+08:00"
 +++
 
 # 简介
@@ -109,3 +109,6 @@ updatedAt = "2026-08-20T16:18:00+08:00"
 - [第五十四章 残殿灯明网重结](./chapter-54.md)　*（已写）*
 - [第五十五章 寒眼全睁古劫回](./chapter-55.md)　*（已写）*
 - [第五十六章 抽骨夺天两相争](./chapter-56.md)　*（已写）*
+- [第五十七章 残殿夜话骨生根](./chapter-57.md)　*（已写）*
+- [第五十八章 双身归一古劫还](./chapter-58.md)　*（已写）*
+- [第五十九章 新天铸成骨为桥](./chapter-59.md)　*（已写）*
