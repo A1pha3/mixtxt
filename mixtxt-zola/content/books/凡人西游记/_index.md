@@ -13,7 +13,7 @@ visibility = "public"
 cover = "/covers/fanren-xiyou.jpg"
 copyrightStatus = "public-domain"
 startedAt = "2026-08-20"
-updatedAt = "2026-08-20T19:30:00+08:00"
+updatedAt = "2026-08-20T20:18:00+08:00"
 +++
 
 # 简介
@@ -127,3 +127,9 @@ updatedAt = "2026-08-20T19:30:00+08:00"
 - [第六十六章 拔根令下九州应](./chapter-66.md)　*（已写）*
 - [第六十七章 直捣残殿根未绝](./chapter-67.md)　*（已写）*
 - [第六十八章 千手拔根残殿崩](./chapter-68.md)　*（已写）*
+
+## 第九卷 · 教人捂须
+
+- [第六十九章 新天底下旧饵生](./chapter-69.md)　*（已写）*
+- [第七十章 北地小座真人来](./chapter-70.md)　*（已写）*
+- [第七十一章 千万手织九州网](./chapter-71.md)　*（已写）*
