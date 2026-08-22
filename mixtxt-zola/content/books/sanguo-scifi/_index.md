@@ -13,7 +13,7 @@ visibility = "public"
 cover = "/covers/sanguo-scifi.jpg"
 copyrightStatus = "public-domain"
 startedAt = "2026-06-03"
-updatedAt = "2026-08-22T19:41:00+08:00"
+updatedAt = "2026-08-22T20:13:00+08:00"
 totalVolumes = 6
 chaptersPerVolume = 300
 +++
@@ -40,7 +40,7 @@ chaptersPerVolume = 300
 
 # 目录（共六卷，每卷三百章）
 
-- [第一卷（第 1-300 章）](./volume-01/)　*龙城初起 · 桃园结义 · 黄巾乱起 · 诸侯会盟 · 寒渊辞行 · 南下荆襄 · 台左会孙坚 · 西凉压境 · 洛阳收网 · 徐州风云（已写至第 51 章）*
+- [第一卷（第 1-300 章）](./volume-01/)　*龙城初起 · 桃园结义 · 黄巾乱起 · 诸侯会盟 · 寒渊辞行 · 南下荆襄 · 台左会孙坚 · 西凉压境 · 洛阳收网 · 徐州风云（已写至第 54 章）*
 - [第二卷（第 301-600 章）](./volume-02/)　*（待续）*
 - [第三卷（第 601-900 章）](./volume-03/)　*（待续）*
 - [第四卷（第 901-1200 章）](./volume-04/)　*（待续）*
