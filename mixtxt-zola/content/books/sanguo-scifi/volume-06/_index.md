@@ -1,6 +1,6 @@
 +++
 title = "第六卷（第 1501-1800 章）"
-description = "天下归心——三分归一，龙城苏醒，织席贩履的少年，终成天下之主。"
+description = "天下归心——三分归一，玄黄苏醒，织席贩履的少年，终成天下之主。"
 template = "book.html"
 sort_by = "weight"
 draft = false

@@ -1,6 +1,6 @@
 +++
 title = "第五卷（第 1201-1500 章）"
-description = "龙城问鼎——司马氏篡魏，三国归晋，龙城光甲的最后秘密揭晓。"
+description = "玄黄问鼎——司马氏篡魏，三国归晋，玄黄战甲的最后秘密揭晓。"
 template = "book.html"
 sort_by = "weight"
 draft = false
